@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
-// Инициализация Supabase
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -13,11 +12,9 @@ export default function Home() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  
   const [posts, setPosts] = useState<any[]>([])
   const [messages, setMessages] = useState<any[]>([])
   const [view, setView] = useState<'feed' | 'chat'>('feed')
-  
   const [postText, setPostText] = useState('')
   const [chatWith, setChatWith] = useState('')
   const [msgText, setMsgText] = useState('')
@@ -49,13 +46,11 @@ export default function Home() {
     const { data, error } = type === 'login' 
       ? await supabase.auth.signInWithPassword({ email, password })
       : await supabase.auth.signUp({ email, password })
-    
     if (error) alert("Ошибка: " + error.message)
     else setUser(data.user)
     setLoading(false)
   }
 
-  // ФУНКЦИЯ ПУБЛИКАЦИИ: Исправляет ошибку Invalid Key
   async function createPost() {
     if (!postText && !file) return alert("Введите текст или выберите фото")
     setLoading(true)
@@ -63,7 +58,7 @@ export default function Home() {
 
     try {
       if (file) {
-        // Генерация безопасного имени файла (только цифры)
+        // Заменяем русское имя файла на цифры, чтобы избежать ошибки Invalid Key
         const fileExt = file.name.split('.').pop();
         const fileName = `${Date.now()}.${fileExt}`; 
 
@@ -72,22 +67,17 @@ export default function Home() {
           .upload(fileName, file)
 
         if (uploadError) throw uploadError
-
         if (data) {
-          const { data: urlData } = supabase.storage.from('images').getPublicUrl(fileName)
-          imageUrl = urlData.publicUrl
+          imageUrl = supabase.storage.from('images').getPublicUrl(fileName).data.publicUrl
         }
       }
 
       const { error: insertError } = await supabase.from('posts').insert([
         { text: postText, author_email: user.email, image_url: imageUrl }
       ])
-
       if (insertError) throw insertError
 
-      setPostText('')
-      setFile(null)
-      loadPosts()
+      setPostText(''); setFile(null); loadPosts();
     } catch (err: any) {
       alert("Ошибка: " + err.message)
     } finally {
@@ -100,10 +90,7 @@ export default function Home() {
     const { error } = await supabase.from('messages').insert([
       { sender_email: user.email, receiver_email: chatWith, content: msgText }
     ])
-    if (!error) {
-      setMsgText('')
-      loadMessages()
-    }
+    if (!error) { setMsgText(''); loadMessages(); }
   }
 
   const containerStyle = { background: '#000', minHeight: '100vh', color: '#fff', fontFamily: '-apple-system, sans-serif' }
