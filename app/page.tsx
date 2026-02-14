@@ -20,8 +20,8 @@ export default function Home() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [postText, setPostText] = useState('')
-  const [searchQuery, setSearchQuery] = useState('') // Для музыки
-  const [userSearch, setUserSearch] = useState('')   // Для поиска людей
+  const [searchQuery, setSearchQuery] = useState('') 
+  const [userSearch, setUserSearch] = useState('')   
   const [chatWith, setChatWith] = useState('')
   const [msgText, setMsgText] = useState('')
   const [file, setFile] = useState<File | null>(null)
@@ -30,9 +30,11 @@ export default function Home() {
   const [myBio, setMyBio] = useState('')
   const [myAvatar, setMyAvatar] = useState('')
 
+  // СОСТОЯНИЕ ПЛЕЕРА
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [volume, setVolume] = useState(1) // Громкость от 0 до 1
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const myNick = user?.email?.split('@')[0] || ''
@@ -55,6 +57,11 @@ export default function Home() {
     if (view === 'chat' && chatWith) loadMessages()
   }, [user, view, searchQuery, chatWith, userSearch])
 
+  // Обновление громкости при изменении стейта
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = volume
+  }, [volume])
+
   async function loadProfile(uid: string) {
     const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
     if (data) { setMyBio(data.bio || ''); setMyAvatar(data.avatar_url || '') }
@@ -66,7 +73,6 @@ export default function Home() {
   }
 
   async function handleLike(post: any) {
-    // Простая логика лайка: увеличиваем счетчик в базе
     const newLikes = (post.likes_count || 0) + 1
     await supabase.from('posts').update({ likes_count: newLikes }).eq('id', post.id)
     loadPosts() 
@@ -150,7 +156,12 @@ export default function Home() {
 
   return (
     <div style={s.bg}>
-      <audio ref={audioRef} onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)} onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)} onEnded={() => setPlayingId(null)} />
+      <audio 
+        ref={audioRef} 
+        onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)} 
+        onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)} 
+        onEnded={() => setPlayingId(null)} 
+      />
       
       <nav style={s.nav}>
         <b>#HASHTAG</b>
@@ -208,7 +219,17 @@ export default function Home() {
                         }
                     }} style={{...s.btn, padding: '5px 15px'}}>{playingId === sng.id && !audioRef.current?.paused ? '⏸' : '▶'}</button>
                 </div>
-                {playingId === sng.id && <input type="range" style={{width:'100%', marginTop: '10px'}} min="0" max={duration} value={currentTime} onChange={e => { if(audioRef.current) audioRef.current.currentTime = parseFloat(e.target.value) }} />}
+                {playingId === sng.id && (
+                  <div style={{marginTop:'15px'}}>
+                    <div style={{fontSize:'10px', color:'#888', marginBottom:'5px'}}>Перемотка</div>
+                    <input type="range" style={{width:'100%', accentColor:'#3b82f6'}} min="0" max={duration} value={currentTime} onChange={e => { if(audioRef.current) audioRef.current.currentTime = parseFloat(e.target.value) }} />
+                    
+                    <div style={{display:'flex', alignItems:'center', gap:'10px', marginTop:'10px'}}>
+                        <span style={{fontSize:'10px', color:'#888'}}>Громкость 🔊</span>
+                        <input type="range" style={{flex: 1, height:'4px', accentColor:'#fff'}} min="0" max="1" step="0.01" value={volume} onChange={e => setVolume(parseFloat(e.target.value))} />
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </>
@@ -216,7 +237,7 @@ export default function Home() {
 
         {view === 'people' && (
           <>
-            <input placeholder="Найти человека по нику..." style={{...s.input, marginBottom: '15px'}} onChange={e => setUserSearch(e.target.value)} />
+            <input placeholder="Найти человека..." style={{...s.input, marginBottom: '15px'}} onChange={e => setUserSearch(e.target.value)} />
             {allUsers.map(u => (
               <div key={u.id} style={{...s.card, display:'flex', justifyContent:'space-between', alignItems: 'center'}}>
                 <b>@{u.username}</b>
@@ -232,22 +253,22 @@ export default function Home() {
                 {myAvatar && <img src={myAvatar} style={{width:'100%', height:'100%', objectFit:'cover'}} />}
             </div>
             <h3>@{myNick}</h3>
-            <p style={{color: '#888'}}>{myBio || 'Нет описания'}</p>
-            <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{...s.btn, background: 'red', color: '#fff', width: '100%', marginTop: '20px'}}>Выход</button>
+            <p style={{color: '#888', fontSize: '14px'}}>{myBio || 'Статус не установлен'}</p>
+            <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{...s.btn, background: '#ef4444', color: '#fff', width: '100%', marginTop: '20px'}}>Выход</button>
           </div>
         )}
 
         {view === 'chat' && (
           <div style={{...s.card, height: '70vh', display: 'flex', flexDirection: 'column'}}>
-            <div style={{flex: 1, overflowY: 'auto'}}>
+            <div style={{flex: 1, overflowY: 'auto', paddingRight: '5px'}}>
               {messages.map(m => (
                 <div key={m.id} style={{textAlign: m.sender_name === myNick ? 'right' : 'left', margin: '10px 0'}}>
-                  <span style={{background: m.sender_name === myNick ? '#3b82f6' : '#262626', padding: '8px 12px', borderRadius: '12px', display: 'inline-block'}}>{m.content}</span>
+                  <span style={{background: m.sender_name === myNick ? '#3b82f6' : '#262626', padding: '8px 12px', borderRadius: '12px', display: 'inline-block', maxWidth: '80%'}}>{m.content}</span>
                 </div>
               ))}
             </div>
             <div style={{display: 'flex', gap: '5px', marginTop: '10px'}}>
-              <input style={s.input} value={msgText} onChange={e => setMsgText(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendMsg()} />
+              <input style={s.input} value={msgText} onChange={e => setMsgText(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendMsg()} placeholder="Сообщение..." />
               <button onClick={sendMsg} style={s.btn}>→</button>
             </div>
           </div>
