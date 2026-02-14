@@ -9,23 +9,28 @@ const supabase = createClient(
 
 export default function Home() {
   const [user, setUser] = useState<any>(null)
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('') // Вход по Нику
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  
   const [posts, setPosts] = useState<any[]>([])
   const [messages, setMessages] = useState<any[]>([])
   const [view, setView] = useState<'feed' | 'chat'>('feed')
+  
   const [postText, setPostText] = useState('')
-  const [chatWith, setChatWith] = useState('')
+  const [chatWith, setChatWith] = useState('') // Ник собеседника
   const [msgText, setMsgText] = useState('')
   const [file, setFile] = useState<File | null>(null)
 
+  // Следим за сообщениями в реальном времени
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
+      if (session) setUser(session.user)
     })
     loadPosts()
-  }, [])
+    const interval = setInterval(() => { if(view === 'chat') loadMessages() }, 3000)
+    return () => clearInterval(interval)
+  }, [view, chatWith])
 
   async function loadPosts() {
     const { data } = await supabase.from('posts').select('*').order('created_at', { ascending: false })
@@ -33,117 +38,130 @@ export default function Home() {
   }
 
   async function loadMessages() {
-    if (!user) return
-    const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: true })
+    if (!user || !chatWith) return
+    const myNick = user.email.split('@')[0]
+    const { data } = await supabase.from('messages')
+      .select('*')
+      .or(`and(sender_name.eq.${myNick},receiver_name.eq.${chatWith}),and(sender_name.eq.${chatWith},receiver_name.eq.${myNick})`)
+      .order('created_at', { ascending: true })
     if (data) setMessages(data)
   }
 
   async function handleAuth(type: 'login' | 'signup') {
     setLoading(true)
+    const fakeEmail = `${username}@app.com` // Превращаем ник в email для Supabase
     const { data, error } = type === 'login' 
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password })
-    if (error) alert(error.message)
+      ? await supabase.auth.signInWithPassword({ email: fakeEmail, password })
+      : await supabase.auth.signUp({ email: fakeEmail, password })
+    
+    if (error) alert("Ошибка: " + error.message)
     else setUser(data.user)
     setLoading(false)
   }
 
   async function createPost() {
-    if (!postText && !file) return alert("Напишите текст или выберите фото")
+    if (!postText && !file) return
     setLoading(true)
     let imageUrl = ''
-
-    try {
-      if (file) {
-        // Убираем ошибку "Invalid key" заменяя имя файла на цифры
-        const fileExt = file.name.split('.').pop()
-        const fileName = `${Date.now()}.${fileExt}`
-        const { data, error: upErr } = await supabase.storage.from('images').upload(fileName, file)
-        if (upErr) throw upErr
-        imageUrl = supabase.storage.from('images').getPublicUrl(fileName).data.publicUrl
-      }
-
-      const { error: insErr } = await supabase.from('posts').insert([
-        { text: postText, author_email: user.email, image_url: imageUrl }
-      ])
-      if (insErr) throw insErr
-
-      setPostText(''); setFile(null); loadPosts();
-    } catch (e: any) {
-      alert("Ошибка: " + e.message)
-    } finally {
-      setLoading(false)
+    if (file) {
+      const fileName = `${Date.now()}.png`
+      const { data } = await supabase.storage.from('images').upload(fileName, file)
+      if (data) imageUrl = supabase.storage.from('images').getPublicUrl(fileName).data.publicUrl
     }
+    await supabase.from('posts').insert([{ 
+        text: postText, 
+        username: user.email.split('@')[0], 
+        image_url: imageUrl 
+    }])
+    setPostText(''); setFile(null); loadPosts(); setLoading(false);
   }
 
   async function sendMsg() {
     if (!msgText || !chatWith) return
-    await supabase.from('messages').insert([{ sender_email: user.email, receiver_email: chatWith, content: msgText }])
-    setMsgText(''); loadMessages();
+    const myNick = user.email.split('@')[0]
+    const { error } = await supabase.from('messages').insert([
+      { sender_name: myNick, receiver_name: chatWith, content: msgText }
+    ])
+    if (!error) { setMsgText(''); loadMessages(); }
   }
 
   const s = {
     bg: { background: '#000', minHeight: '100vh', color: '#fff', fontFamily: 'sans-serif' },
-    card: { background: '#111', border: '1px solid #333', borderRadius: '12px', padding: '24px' },
-    input: { width: '100%', padding: '12px', background: '#000', border: '1px solid #333', borderRadius: '8px', color: '#fff', outline: 'none', boxSizing: 'border-box' as const },
-    btn: { background: '#fff', color: '#000', border: 'none', borderRadius: '8px', padding: '12px 24px', fontWeight: '600', cursor: 'pointer' }
+    card: { background: '#111', border: '1px solid #333', borderRadius: '12px', padding: '20px' },
+    input: { width: '100%', padding: '12px', background: '#000', border: '1px solid #333', borderRadius: '8px', color: '#fff', outline: 'none', boxSizing: 'border-box' as any },
+    btn: { background: '#fff', color: '#000', border: 'none', borderRadius: '8px', padding: '10px 20px', fontWeight: 'bold', cursor: 'pointer' }
   }
 
   if (!user) {
     return (
       <div style={{ ...s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ ...s.card, width: '350px', textAlign: 'center' }}>
-          <h1 style={{ fontSize: '32px', marginBottom: '24px' }}>#HASHTAG</h1>
-          <input placeholder="Email" style={s.input} value={email} onChange={e => setEmail(e.target.value)} />
+        <div style={{ ...s.card, width: '320px', textAlign: 'center' }}>
+          <h1 style={{ letterSpacing: '-1px' }}>#HASHTAG</h1>
+          <input placeholder="Твой Ник (напр. Ivan)" style={s.input} value={username} onChange={e => setUsername(e.target.value)} />
           <div style={{ height: '10px' }} />
           <input type="password" placeholder="Пароль" style={s.input} value={password} onChange={e => setPassword(e.target.value)} />
           <div style={{ height: '20px' }} />
           <button onClick={() => handleAuth('login')} style={{ ...s.btn, width: '100%' }}>ВОЙТИ</button>
+          <p onClick={() => handleAuth('signup')} style={{ color: '#888', fontSize: '12px', cursor: 'pointer', marginTop: '15px' }}>Создать аккаунт</p>
         </div>
       </div>
     )
   }
 
+  const myNick = user.email.split('@')[0]
+
   return (
     <div style={s.bg}>
-      <nav style={{ borderBottom: '1px solid #333', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ margin: 0 }}>#HASHTAG</h2>
-        <div style={{ display: 'flex', gap: '20px' }}>
-          <span onClick={() => {setView('feed'); loadPosts()}} style={{ cursor: 'pointer', color: view==='feed'?'#fff':'#888' }}>Лента</span>
-          <span onClick={() => {setView('chat'); loadMessages()}} style={{ cursor: 'pointer', color: view==='chat'?'#fff':'#888' }}>Чаты</span>
-          <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{ background: '#333', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer' }}>Выход</button>
+      <nav style={{ borderBottom: '1px solid #333', padding: '15px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)' }}>
+        <b style={{ fontSize: '20px' }}>#HASHTAG</b>
+        <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+          <span onClick={() => setView('feed')} style={{ cursor: 'pointer', color: view==='feed'?'#fff':'#888' }}>Лента</span>
+          <span onClick={() => setView('chat')} style={{ cursor: 'pointer', color: view==='chat'?'#fff':'#888' }}>Чаты</span>
+          <i style={{ color: '#555', fontSize: '12px' }}>@{myNick}</i>
+          <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{ background: '#222', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: '5px' }}>Выход</button>
         </div>
       </nav>
 
-      <div style={{ maxWidth: '600px', margin: '40px auto', padding: '0 20px' }}>
+      <div style={{ maxWidth: '500px', margin: '30px auto', padding: '0 15px' }}>
         {view === 'feed' ? (
           <>
-            <div style={{ ...s.card, marginBottom: '24px' }}>
-              <textarea placeholder="Что нового?" style={{ ...s.input, height: '80px', border: 'none' }} value={postText} onChange={e => setPostText(e.target.value)} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', alignItems: 'center' }}>
-                <label style={{ cursor: 'pointer', color: '#888', fontSize: '14px' }}>
+            <div style={{ ...s.card, marginBottom: '20px' }}>
+              <textarea placeholder="Что нового?" style={{ ...s.input, height: '70px', border: 'none' }} value={postText} onChange={e => setPostText(e.target.value)} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
+                <label style={{ color: '#888', fontSize: '13px', cursor: 'pointer' }}>
                   <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} style={{ display: 'none' }} />
-                  🖼️ {file ? 'Фото выбрано' : 'Добавить фото'}
+                  🖼️ {file ? 'Фото готово' : 'Фото'}
                 </label>
-                <button onClick={createPost} disabled={loading} style={{ ...s.btn, padding: '8px 16px' }}>Опубликовать</button>
+                <button onClick={createPost} disabled={loading} style={s.btn}>Поделиться</button>
               </div>
             </div>
             {posts.map(p => (
-              <div key={p.id} style={{ ...s.card, marginBottom: '16px' }}>
-                <div style={{ color: '#888', fontSize: '12px', marginBottom: '8px' }}>{p.author_email}</div>
-                <p style={{ margin: '0 0 12px 0' }}>{p.text}</p>
+              <div key={p.id} style={{ ...s.card, marginBottom: '15px' }}>
+                <div style={{ color: '#0070f3', fontWeight: 'bold', fontSize: '13px', marginBottom: '5px' }}>@{p.username || 'user'}</div>
+                <p style={{ margin: '0 0 10px 0', lineHeight: '1.5' }}>{p.text}</p>
                 {p.image_url && <img src={p.image_url} style={{ width: '100%', borderRadius: '8px' }} />}
               </div>
             ))}
           </>
         ) : (
-          <div style={{ ...s.card, height: '60vh', display: 'flex', flexDirection: 'column' }}>
-            <input placeholder="Email собеседника" style={s.input} value={chatWith} onChange={e => setChatWith(e.target.value)} />
-            <div style={{ flex: 1, overflowY: 'auto', padding: '10px 0' }}>
-               {/* Сообщения появятся здесь */}
+          <div style={{ ...s.card, height: '75vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '15px', borderBottom: '1px solid #333' }}>
+              <input placeholder="Кому пишем? (Ник)" style={s.input} value={chatWith} onChange={e => setChatWith(e.target.value)} />
             </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <input placeholder="Сообщение..." style={s.input} value={msgText} onChange={e => setMsgText(e.target.value)} />
+            <div style={{ flex: 1, overflowY: 'auto', padding: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {messages.map(m => (
+                <div key={m.id} style={{ 
+                  alignSelf: m.sender_name === myNick ? 'flex-end' : 'flex-start',
+                  background: m.sender_name === myNick ? '#fff' : '#222',
+                  color: m.sender_name === myNick ? '#000' : '#fff',
+                  padding: '8px 14px', borderRadius: '15px', maxWidth: '80%', fontSize: '14px'
+                }}>
+                  {m.content}
+                </div>
+              ))}
+            </div>
+            <div style={{ padding: '15px', borderTop: '1px solid #333', display: 'flex', gap: '10px' }}>
+              <input placeholder="Сообщение..." style={s.input} value={msgText} onChange={e => setMsgText(e.target.value)} onKeyPress={e => e.key==='Enter' && sendMsg()} />
               <button onClick={sendMsg} style={s.btn}>→</button>
             </div>
           </div>
