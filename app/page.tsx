@@ -9,43 +9,38 @@ const supabase = createClient(
 
 export default function Home() {
   const [user, setUser] = useState<any>(null)
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
+  const [view, setView] = useState<'feed' | 'chat' | 'profile' | 'people' | 'music' | 'notifs'>('feed')
   const [loading, setLoading] = useState(false)
   
+  // Данные
   const [posts, setPosts] = useState<any[]>([])
-  const [messages, setMessages] = useState<any[]>([])
   const [allUsers, setAllUsers] = useState<any[]>([])
-  const [friendsList, setFriendsList] = useState<any[]>([])
   const [songs, setSongs] = useState<any[]>([])
-  
-  const [view, setView] = useState<'feed' | 'chat' | 'profile' | 'people' | 'friends' | 'music'>('feed')
-  
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [messages, setMessages] = useState<any[]>([])
+
+  // Состояния ввода
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [postText, setPostText] = useState('')
+  const [commentText, setCommentText] = useState<{ [key: string]: string }>({})
   const [searchQuery, setSearchQuery] = useState('')
   const [chatWith, setChatWith] = useState('')
   const [msgText, setMsgText] = useState('')
   const [file, setFile] = useState<File | null>(null)
-  const [myBio, setMyBio] = useState('')
-  const [myAvatar, setMyAvatar] = useState('')
   
-  const [songTitle, setSongTitle] = useState('')
-  const [songArtist, setSongArtist] = useState('')
+  const myNick = user?.email?.split('@')[0] || ''
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.email) {
-        setUser(session.user)
-        const nick = session.user.email.split('@')[0]
-        loadProfile(nick)
-      }
+      if (session?.user) setUser(session.user)
     })
-    loadPosts()
   }, [])
 
   useEffect(() => {
+    loadPosts()
+    loadNotifications()
     if (view === 'people') loadAllUsers()
-    if (view === 'friends') loadFriends()
     if (view === 'music') loadMusic()
     
     let interval: any
@@ -56,29 +51,67 @@ export default function Home() {
     return () => clearInterval(interval)
   }, [view, chatWith, searchQuery])
 
-  async function loadProfile(nick: string) {
-    const { data } = await supabase.from('profiles').select('*').eq('username', nick).maybeSingle()
-    if (data) { setMyBio(data.bio || ''); setMyAvatar(data.avatar_url || '') }
+  // --- УВЕДОМЛЕНИЯ ---
+  async function loadNotifications() {
+    if (!user) return
+    const { data } = await supabase.from('notifications')
+      .select('*')
+      .eq('receiver_id', user.id)
+      .order('created_at', { ascending: false })
+    if (data) setNotifications(data)
   }
 
+  async function createNotification(receiverId: string, type: 'like' | 'comment', postId: string) {
+    if (!user || user.id === receiverId) return // Не уведомлять самого себя
+    await supabase.from('notifications').insert([{
+      receiver_id: receiverId,
+      sender_name: myNick,
+      type: type,
+      post_id: postId
+    }])
+  }
+
+  async function markNotifsRead() {
+    if (!user) return
+    await supabase.from('notifications').update({ is_read: true }).eq('receiver_id', user.id)
+    loadNotifications()
+  }
+
+  // --- ЛЕНТА И ЛАЙКИ ---
   async function loadPosts() {
-    const { data } = await supabase.from('posts').select('*').order('created_at', { ascending: false })
+    const { data } = await supabase.from('posts').select('*, comments(*)').order('created_at', { ascending: false })
     if (data) setPosts(data)
   }
 
-  async function loadAllUsers() {
-    const { data } = await supabase.from('profiles').select('*')
-    if (data && user) setAllUsers(data.filter(u => u.id !== user.id))
+  async function handleLike(post: any) {
+    if (!user) return
+    const { data: ex } = await supabase.from('post_likes').select('*').eq('post_id', post.id).eq('user_id', user.id).maybeSingle()
+    if (ex) return alert("Уже лайкнуто")
+    
+    await supabase.from('post_likes').insert([{ post_id: post.id, user_id: user.id }])
+    await supabase.from('posts').update({ likes_count: (post.likes_count || 0) + 1 }).eq('id', post.id)
+    
+    // Создаем уведомление
+    await createNotification(post.user_id, 'like', post.id)
+    loadPosts()
   }
 
-  async function loadFriends() {
-    if (!user) return
-    const { data: frData } = await supabase.from('friends').select('friend_id').eq('user_id', user.id)
-    if (frData) {
-      const ids = frData.map(f => f.friend_id)
-      const { data: prData } = await supabase.from('profiles').select('*').in('id', ids)
-      if (prData) setFriendsList(prData)
-    }
+  async function addComment(post: any) {
+    const text = commentText[post.id]
+    if (!text || !user) return
+    await supabase.from('comments').insert([{ post_id: post.id, user_id: user.id, username: myNick, content: text }])
+    
+    // Создаем уведомление
+    await createNotification(post.user_id, 'comment', post.id)
+    
+    setCommentText({ ...commentText, [post.id]: '' })
+    loadPosts()
+  }
+
+  // --- ОСТАЛЬНЫЕ ФУНКЦИИ (Музыка, Чат, Профиль) ---
+  async function loadAllUsers() {
+    const { data } = await supabase.from('profiles').select('*')
+    if (data) setAllUsers(data.filter(u => u.id !== user?.id))
   }
 
   async function loadMusic() {
@@ -88,27 +121,19 @@ export default function Home() {
     if (data) setSongs(data)
   }
 
-  async function uploadMusic() {
-    if (!file || !songTitle || !user) return alert("Нужен MP3 файл и название")
-    setLoading(true)
-    const name = `music/${Date.now()}_${file.name}`
-    const { data } = await supabase.storage.from('images').upload(name, file)
-    if (data) {
-      const url = supabase.storage.from('images').getPublicUrl(name).data.publicUrl
-      await supabase.from('music').insert([{ title: songTitle, artist: songArtist || 'Неизвестен', url, user_id: user.id }])
-      setSongTitle(''); setSongArtist(''); setFile(null); loadMusic()
-    }
-    setLoading(false)
+  async function loadMessages() {
+    if (!user || !chatWith) return
+    const { data } = await supabase.from('messages')
+      .select('*')
+      .or(`and(sender_name.eq.${myNick},receiver_name.eq.${chatWith}),and(sender_name.eq.${chatWith},receiver_name.eq.${myNick})`)
+      .order('created_at', { ascending: true })
+    if (data) setMessages(data)
   }
 
-  async function handleLike(postId: string) {
-    if (!user) return
-    const { data: ex } = await supabase.from('post_likes').select('*').eq('post_id', postId).eq('user_id', user.id).maybeSingle()
-    if (ex) return alert("Уже лайкнуто")
-    await supabase.from('post_likes').insert([{ post_id: postId, user_id: user.id }])
-    const { data: p } = await supabase.from('posts').select('likes_count').eq('id', postId).single()
-    await supabase.from('posts').update({ likes_count: (p?.likes_count || 0) + 1 }).eq('id', postId)
-    loadPosts()
+  async function sendMsg() {
+    if (!user || !msgText) return
+    await supabase.from('messages').insert([{ sender_name: myNick, receiver_name: chatWith, content: msgText }])
+    setMsgText(''); loadMessages()
   }
 
   async function handleAuth(type: 'login' | 'signup') {
@@ -125,113 +150,89 @@ export default function Home() {
     setLoading(false)
   }
 
-  async function createPost() {
-    if (!user || !postText) return
-    setLoading(true)
-    let img = ''
-    if (file) {
-      const path = `posts/${Date.now()}.png`
-      const { data } = await supabase.storage.from('images').upload(path, file)
-      if (data) img = supabase.storage.from('images').getPublicUrl(path).data.publicUrl
-    }
-    await supabase.from('posts').insert([{ text: postText, username: user.email?.split('@')[0], image_url: img }])
-    setPostText(''); setFile(null); loadPosts(); setLoading(false)
-  }
-
-  async function loadMessages() {
-    if (!user || !chatWith) return
-    const me = user.email?.split('@')[0]
-    const { data } = await supabase.from('messages')
-      .select('*')
-      .or(`and(sender_name.eq.${me},receiver_name.eq.${chatWith}),and(sender_name.eq.${chatWith},receiver_name.eq.${me})`)
-      .order('created_at', { ascending: true })
-    if (data) setMessages(data)
-  }
-
-  async function sendMsg() {
-    if (!user || !msgText) return
-    await supabase.from('messages').insert([{ sender_name: user.email?.split('@')[0], receiver_name: chatWith, content: msgText }])
-    setMsgText(''); loadMessages()
-  }
-
+  // --- СТИЛИ ---
   const s = {
-    bg: { background: '#0a0a0a', minHeight: '100vh', color: '#e5e5e5', fontFamily: 'system-ui, sans-serif' },
-    card: { background: '#161616', border: '1px solid #262626', borderRadius: '16px', padding: '20px', marginBottom: '15px' },
+    bg: { background: '#0a0a0a', minHeight: '100vh', color: '#e5e5e5', fontFamily: 'sans-serif' },
+    card: { background: '#161616', border: '1px solid #262626', borderRadius: '16px', padding: '15px', marginBottom: '15px' },
     input: { width: '100%', padding: '12px', background: '#000', border: '1px solid #262626', borderRadius: '10px', color: '#fff', boxSizing: 'border-box' as any },
-    btn: { background: '#fff', color: '#000', border: 'none', borderRadius: '10px', padding: '10px 20px', fontWeight: '600' as any, cursor: 'pointer', transition: '0.2s' },
-    nav: { borderBottom: '1px solid #262626', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky' as any, top: 0, background: 'rgba(10,10,10,0.8)', backdropFilter: 'blur(10px)', zIndex: 10 }
+    btn: { background: '#fff', color: '#000', border: 'none', borderRadius: '10px', padding: '10px 15px', fontWeight: 'bold' as any, cursor: 'pointer' },
+    nav: { borderBottom: '1px solid #262626', padding: '15px', display: 'flex', justifyContent: 'space-between', position: 'sticky' as any, top: 0, background: 'rgba(10,10,10,0.8)', backdropFilter: 'blur(10px)', zIndex: 10 },
+    badge: { background: '#ef4444', color: '#fff', borderRadius: '50%', padding: '2px 6px', fontSize: '10px', marginLeft: '5px' }
   }
 
   if (!user) return (
     <div style={{ ...s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ ...s.card, width: '340px', textAlign: 'center' }}>
-        <h1 style={{ letterSpacing: '-1px', marginBottom: '25px' }}>#HASHTAG</h1>
-        <input placeholder="Имя пользователя" style={s.input} onChange={e => setUsername(e.target.value)} />
-        <input type="password" placeholder="Пароль" style={{ ...s.input, marginTop: '12px' }} onChange={e => setPassword(e.target.value)} />
-        <button onClick={() => handleAuth('login')} style={{ ...s.btn, width: '100%', marginTop: '24px' }}>Войти</button>
-        <p onClick={() => handleAuth('signup')} style={{ color: '#888', fontSize: '13px', marginTop: '20px', cursor: 'pointer' }}>Ещё нет аккаунта? Зарегистрироваться</p>
+      <div style={{ ...s.card, width: '320px' }}>
+        <h2 style={{ textAlign: 'center' }}>#HASHTAG</h2>
+        <input placeholder="Ник" style={s.input} onChange={e => setUsername(e.target.value)} />
+        <input type="password" placeholder="Пароль" style={{ ...s.input, marginTop: '10px' }} onChange={e => setPassword(e.target.value)} />
+        <button onClick={() => handleAuth('login')} style={{ ...s.btn, width: '100%', marginTop: '20px' }}>Войти</button>
+        <p onClick={() => handleAuth('signup')} style={{ color: '#888', textAlign: 'center', cursor: 'pointer', marginTop: '15px', fontSize: '13px' }}>Создать аккаунт</p>
       </div>
     </div>
   )
 
-  const myNick = user?.email?.split('@')[0] || ''
+  const unreadCount = notifications.filter(n => !n.is_read).length
 
   return (
     <div style={s.bg}>
       <nav style={s.nav}>
-        <b style={{ fontSize: '20px', letterSpacing: '-1px' }}>#HASHTAG</b>
-        <div style={{ display: 'flex', gap: '20px', fontSize: '14px', fontWeight: '500' }}>
-          {['feed', 'people', 'friends', 'music', 'profile'].map((item) => (
-            <span key={item} onClick={() => setView(item as any)} style={{ cursor: 'pointer', color: view === item ? '#fff' : '#737373', textTransform: 'capitalize' as any }}>
-              {item === 'feed' ? 'Лента' : item === 'people' ? 'Люди' : item === 'friends' ? 'Друзья' : item === 'music' ? 'Музыка' : 'Профиль'}
-            </span>
-          ))}
+        <b>#HASHTAG</b>
+        <div style={{ display: 'flex', gap: '15px', fontSize: '14px' }}>
+          <span onClick={() => setView('feed')} style={{ cursor: 'pointer', color: view === 'feed' ? '#fff' : '#888' }}>Лента</span>
+          <span onClick={() => setView('music')} style={{ cursor: 'pointer', color: view === 'music' ? '#fff' : '#888' }}>Музыка</span>
+          <span onClick={() => { setView('notifs'); markNotifsRead(); }} style={{ cursor: 'pointer', color: view === 'notifs' ? '#fff' : '#888' }}>
+            Уведомления {unreadCount > 0 && <span style={s.badge}>{unreadCount}</span>}
+          </span>
+          <span onClick={() => setView('profile')} style={{ cursor: 'pointer', color: view === 'profile' ? '#fff' : '#888' }}>Профиль</span>
         </div>
       </nav>
 
-      <div style={{ maxWidth: '540px', margin: '20px auto', padding: '0 15px' }}>
+      <div style={{ maxWidth: '500px', margin: '20px auto', padding: '0 10px' }}>
         {view === 'feed' && (
-          <>
-            <div style={s.card}>
-              <textarea placeholder="Поделитесь чем-то новым..." style={{ ...s.input, border: 'none', fontSize: '16px', minHeight: '80px', resize: 'none' as any }} value={postText} onChange={e => setPostText(e.target.value)} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '15px', borderTop: '1px solid #262626', paddingTop: '15px' }}>
-                <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} style={{ fontSize: '12px', color: '#888' }} />
-                <button onClick={createPost} style={s.btn}>Опубликовать</button>
-              </div>
-            </div>
-            {posts.map(p => (
-              <div key={p.id} style={s.card}>
-                <b style={{ color: '#3b82f6' }}>@{p.username}</b>
-                <p style={{ lineHeight: '1.5', marginTop: '10px' }}>{p.text}</p>
-                {p.image_url && <img src={p.image_url} style={{ width: '100%', borderRadius: '12px', marginTop: '10px' }} />}
-                <div style={{ marginTop: '15px' }}>
-                  <button onClick={() => handleLike(p.id)} style={{ background: '#262626', border: 'none', color: '#fff', borderRadius: '20px', padding: '6px 16px', fontSize: '13px' }}>❤️ {p.likes_count || 0}</button>
+          posts.map(p => (
+            <div key={p.id} style={s.card}>
+              <b style={{ color: '#3b82f6' }}>@{p.username}</b>
+              <p>{p.text}</p>
+              <button onClick={() => handleLike(p)} style={{ background: 'none', border: '1px solid #333', color: '#fff', borderRadius: '20px', padding: '5px 12px' }}>
+                ❤️ {p.likes_count || 0}
+              </button>
+              
+              <div style={{ marginTop: '15px', borderTop: '1px solid #262626', paddingTop: '10px' }}>
+                {p.comments?.map((c: any) => (
+                  <div key={c.id} style={{ fontSize: '13px', marginBottom: '5px' }}>
+                    <b style={{ color: '#888' }}>@{c.username}:</b> {c.content}
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: '5px', marginTop: '10px' }}>
+                  <input placeholder="Комментировать..." style={{ ...s.input, padding: '5px' }} value={commentText[p.id] || ''} onChange={e => setCommentText({ ...commentText, [p.id]: e.target.value })} />
+                  <button onClick={() => addComment(p)} style={s.btn}>→</button>
                 </div>
               </div>
+            </div>
+          ))
+        )}
+
+        {view === 'notifs' && (
+          <div style={s.card}>
+            <h3>Уведомления</h3>
+            {notifications.length === 0 && <p style={{ color: '#555' }}>Пока пусто</p>}
+            {notifications.map(n => (
+              <div key={n.id} style={{ padding: '10px 0', borderBottom: '1px solid #262626', color: n.is_read ? '#888' : '#fff' }}>
+                <b>@{n.sender_name}</b> {n.type === 'like' ? 'лайкнул ваш пост' : 'прокомментировал ваш пост'}
+                <div style={{ fontSize: '10px', color: '#555' }}>{new Date(n.created_at).toLocaleString()}</div>
+              </div>
             ))}
-          </>
+          </div>
         )}
 
         {view === 'music' && (
           <>
-            <div style={s.card}>
-              <h3 style={{ marginTop: 0 }}>Музыка</h3>
-              <input placeholder="Поиск треков..." style={s.input} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-              <div style={{ marginTop: '15px', padding: '15px', background: '#000', borderRadius: '12px' }}>
-                <p style={{ fontSize: '13px', marginBottom: '10px' }}>Загрузить свой MP3:</p>
-                <input placeholder="Название" style={{ ...s.input, marginBottom: '8px' }} value={songTitle} onChange={e => setSongTitle(e.target.value)} />
-                <input placeholder="Артист" style={{ ...s.input, marginBottom: '12px' }} value={songArtist} onChange={e => setSongArtist(e.target.value)} />
-                <input type="file" accept="audio/*" onChange={e => setFile(e.target.files?.[0] || null)} style={{ fontSize: '12px' }} />
-                <button onClick={uploadMusic} disabled={loading} style={{ ...s.btn, width: '100%', marginTop: '15px' }}>Добавить трек</button>
-              </div>
-            </div>
+            <input placeholder="Поиск музыки..." style={s.input} onChange={e => setSearchQuery(e.target.value)} />
             {songs.map(sng => (
-              <div key={sng.id} style={{ ...s.card, display: 'flex', alignItems: 'center', gap: '15px' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: '600' }}>{sng.title}</div>
-                  <div style={{ color: '#737373', fontSize: '13px' }}>{sng.artist}</div>
-                </div>
-                <audio controls src={sng.url} style={{ height: '32px', width: '180px' }} />
+              <div key={sng.id} style={{ ...s.card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px' }}>
+                <div><b>{sng.title}</b><div style={{ color: '#888', fontSize: '12px' }}>{sng.artist}</div></div>
+                <audio controls src={sng.url} style={{ height: '30px', width: '150px' }} />
               </div>
             ))}
           </>
@@ -239,44 +240,8 @@ export default function Home() {
 
         {view === 'profile' && (
           <div style={{ ...s.card, textAlign: 'center' }}>
-            <div style={{ width: '100px', height: '100px', borderRadius: '50%', background: '#262626', margin: '0 auto 15px', overflow: 'hidden', border: '3px solid #3b82f6' }}>
-              {myAvatar && <img src={myAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-            </div>
-            <h2 style={{ margin: '0' }}>@{myNick}</h2>
-            <p style={{ color: '#888', marginTop: '5px' }}>{myBio || 'Нет описания'}</p>
-            <div style={{ marginTop: '25px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <button style={s.btn}>Редактировать профиль</button>
-              <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{ ...s.btn, background: '#dc2626', color: '#fff' }}>Выйти</button>
-            </div>
-          </div>
-        )}
-
-        {view === 'people' && (
-          allUsers.map(u => (
-            <div key={u.id} style={{ ...s.card, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#262626' }}></div>
-                <b>@{u.username}</b>
-              </div>
-              <button onClick={() => { setChatWith(u.username); setView('chat'); }} style={{ ...s.btn, background: '#262626', color: '#fff', fontSize: '13px' }}>Сообщение</button>
-            </div>
-          ))
-        )}
-
-        {view === 'chat' && (
-          <div style={{ ...s.card, height: '75vh', display: 'flex', flexDirection: 'column', padding: '0' }}>
-            <div style={{ padding: '15px 20px', borderBottom: '1px solid #262626', fontWeight: '600' }}>Чат с @{chatWith}</div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
-              {messages.map(m => (
-                <div key={m.id} style={{ textAlign: m.sender_name === myNick ? 'right' : 'left', margin: '12px 0' }}>
-                  <div style={{ background: m.sender_name === myNick ? '#3b82f6' : '#262626', color: '#fff', padding: '10px 16px', borderRadius: '18px', display: 'inline-block', maxWidth: '80%', fontSize: '15px' }}>{m.content}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{ padding: '15px', borderTop: '1px solid #262626', display: 'flex', gap: '10px' }}>
-              <input style={s.input} placeholder="Сообщение..." value={msgText} onChange={e => setMsgText(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendMsg()} />
-              <button onClick={sendMsg} style={{ ...s.btn, borderRadius: '50%', width: '45px', padding: '0' }}>→</button>
-            </div>
+            <h2>@{myNick}</h2>
+            <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{ ...s.btn, background: '#ef4444', color: '#fff' }}>Выйти</button>
           </div>
         )}
       </div>
