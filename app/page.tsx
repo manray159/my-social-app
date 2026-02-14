@@ -20,7 +20,7 @@ export default function Home() {
   }, [])
 
   async function handleAuth(type: 'login' | 'signup') {
-    if (!email || !password) return alert("Заполни поля!")
+    if (!email || !password) return alert("Заполни email и пароль!")
     setLoading(true)
     
     const { data, error } = type === 'login' 
@@ -29,11 +29,9 @@ export default function Home() {
     
     if (error) {
       alert("Ошибка: " + error.message)
-      // Если снова ошибка схемы, пробуем перезагрузить
-      if (error.message.includes('schema')) window.location.reload()
     } else {
-      if (type === 'signup' && !data.session) {
-        alert("Регистрация успешна! Теперь попробуйте войти.")
+      if (type === 'signup') {
+        alert("Регистрация успешна! Теперь нажми кнопку ВОЙТИ.")
       } else {
         setUser(data.user)
       }
@@ -49,13 +47,19 @@ export default function Home() {
 
   if (!user) {
     return (
-      <div style={{ padding: '50px 20px', textAlign: 'center', backgroundColor: '#000', minHeight: '100vh' }}>
-        <h1 style={{ color: '#0070f3', marginBottom: '30px' }}>#HASHTAG</h1>
+      <div style={{ padding: '50px 20px', textAlign: 'center', backgroundColor: '#000', minHeight: '100vh', fontFamily: 'sans-serif' }}>
+        <h1 style={{ color: '#0070f3' }}>#HASHTAG</h1>
         <div style={{ maxWidth: '350px', margin: '0 auto', background: '#111', padding: '25px', borderRadius: '20px' }}>
           <input placeholder="EMAIL" style={inputStyle} value={email} onChange={e => setEmail(e.target.value)} />
           <input type="password" placeholder="ПАРОЛЬ" style={inputStyle} value={password} onChange={e => setPassword(e.target.value)} />
-          <button onClick={() => handleAuth('login')} style={{ width: '100%', padding: '15px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '10px' }}>ВОЙТИ</button>
-          <button onClick={() => handleAuth('signup')} style={{ width: '100%', padding: '15px', background: '#333', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>РЕГИСТРАЦИЯ</button>
+          
+          <button onClick={() => handleAuth('login')} disabled={loading} style={{ width: '100%', padding: '15px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '10px' }}>
+            {loading ? 'ЗАГРУЗКА...' : 'ВОЙТИ'}
+          </button>
+          
+          <button onClick={() => handleAuth('signup')} disabled={loading} style={{ width: '100%', padding: '15px', background: '#333', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>
+            РЕГИСТРАЦИЯ
+          </button>
         </div>
       </div>
     )
@@ -63,8 +67,8 @@ export default function Home() {
 
   return (
     <div style={{ padding: '50px', textAlign: 'center', backgroundColor: '#fff', minHeight: '100vh', color: '#000' }}>
-      <h1>👋 Привет, {user.email}!</h1>
-      <p>Теперь любой может создать аккаунт.</p>
+      <h1>🎉 Успех! Ты в системе.</h1>
+      <p>Твой аккаунт: <b>{user.email}</b></p>
       <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{marginTop: '20px', padding: '10px 20px', background: 'red', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer'}}>Выйти</button>
     </div>
   )
