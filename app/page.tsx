@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
+// Инициализация Supabase
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -62,18 +63,28 @@ export default function Home() {
     if (!postText && !file) return
     setLoading(true)
     let imageUrl = ''
-    if (file) {
-      const fileName = `${Date.now()}.png`
-      const { data } = await supabase.storage.from('images').upload(fileName, file)
-      if (data) imageUrl = supabase.storage.from('images').getPublicUrl(fileName).data.publicUrl
+    try {
+      if (file) {
+        // Защита от Invalid Key: переименовываем файл в цифры
+        const fileExt = file.name.split('.').pop()
+        const fileName = `${Date.now()}.${fileExt}`
+        const { data, error: upErr } = await supabase.storage.from('images').upload(fileName, file)
+        if (upErr) throw upErr
+        imageUrl = supabase.storage.from('images').getPublicUrl(fileName).data.publicUrl
+      }
+
+      await supabase.from('posts').insert([{ 
+          text: postText, 
+          username: user.email.split('@')[0], 
+          image_url: imageUrl,
+          likes_count: 0
+      }])
+      setPostText(''); setFile(null); loadPosts();
+    } catch (e: any) {
+      alert(e.message)
+    } finally {
+      setLoading(false)
     }
-    await supabase.from('posts').insert([{ 
-        text: postText, 
-        username: user.email.split('@')[0], 
-        image_url: imageUrl,
-        likes_count: 0
-    }])
-    setPostText(''); setFile(null); loadPosts(); setLoading(false);
   }
 
   async function handleLike(postId: string, currentLikes: number) {
@@ -87,10 +98,10 @@ export default function Home() {
   async function sendMsg() {
     if (!msgText || !chatWith) return
     const myNick = user.email.split('@')[0]
-    await supabase.from('messages').insert([
+    const { error } = await supabase.from('messages').insert([
       { sender_name: myNick, receiver_name: chatWith, content: msgText }
     ])
-    setMsgText(''); loadMessages();
+    if (!error) { setMsgText(''); loadMessages(); }
   }
 
   const s = {
