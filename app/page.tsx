@@ -57,6 +57,10 @@ export default function Home() {
     if (view === 'chat' && chatWith) loadMessages()
   }, [user, view, chatWith, userSearch])
 
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = volume
+  }, [volume])
+
   async function loadProfile(uid: string) {
     const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
     if (data) { setMyBio(data.bio || ''); setMyAvatar(data.avatar_url || '') }
@@ -67,30 +71,39 @@ export default function Home() {
     if (data) setPosts(data)
   }
 
-  // УНИКАЛЬНЫЕ ЛАЙКИ
   async function handleLike(post: any) {
-    const { data: existing } = await supabase.from('post_likes').select('*').eq('post_id', post.id).eq('user_id', user.id).maybeSingle()
-    if (existing) return alert("Вы уже поставили лайк!")
-
+    const { data: ex } = await supabase.from('post_likes').select('*').eq('post_id', post.id).eq('user_id', user.id).maybeSingle()
+    if (ex) return alert("Уже лайкнуто")
     await supabase.from('post_likes').insert([{ post_id: post.id, user_id: user.id }])
-    const newLikes = (post.likes_count || 0) + 1
-    await supabase.from('posts').update({ likes_count: newLikes }).eq('id', post.id)
+    await supabase.from('posts').update({ likes_count: (post.likes_count || 0) + 1 }).eq('id', post.id)
     loadPosts() 
   }
 
-  // ДРУЗЬЯ
+  async function createPost() {
+    if (!user || !postText) return
+    setLoading(true)
+    let img = ''
+    if (file) {
+      const path = `posts/${Date.now()}.png`
+      const { data, error } = await supabase.storage.from('images').upload(path, file)
+      if (error) console.error(error)
+      else img = supabase.storage.from('images').getPublicUrl(path).data.publicUrl
+    }
+    await supabase.from('posts').insert([{ text: postText, username: myNick, image_url: img, user_id: user.id, likes_count: 0 }])
+    setPostText(''); setFile(null); loadPosts(); setLoading(false)
+  }
+
   async function addFriend(friendId: string) {
-    const { error } = await supabase.from('friends').insert([{ user_id: user.id, friend_id: friendId }])
-    if (error) alert("Уже в друзьях или ошибка")
-    else alert("Добавлен в друзья!")
+    await supabase.from('friends').insert([{ user_id: user.id, friend_id: friendId }])
+    alert("Добавлен!")
   }
 
   async function loadFriends() {
     const { data } = await supabase.from('friends').select('friend_id').eq('user_id', user.id)
     if (data) {
       const ids = data.map(f => f.friend_id)
-      const { data: frData } = await supabase.from('profiles').select('*').in('id', ids)
-      if (frData) setFriends(frData)
+      const { data: fData } = await supabase.from('profiles').select('*').in('id', ids)
+      if (fData) setFriends(fData)
     }
   }
 
@@ -106,17 +119,17 @@ export default function Home() {
     if (data) setSongs(data)
   }
 
-  async function createPost() {
-    if (!user || !postText) return
+  async function uploadMusic() {
+    if (!file || !songTitle) return
     setLoading(true)
-    let img = ''
-    if (file) {
-      const path = `posts/${Date.now()}.png`
-      const { data } = await supabase.storage.from('images').upload(path, file)
-      if (data) img = supabase.storage.from('images').getPublicUrl(path).data.publicUrl
+    const path = `music/${Date.now()}_${file.name}`
+    const { data } = await supabase.storage.from('images').upload(path, file)
+    if (data) {
+      const url = supabase.storage.from('images').getPublicUrl(path).data.publicUrl
+      await supabase.from('music').insert([{ title: songTitle, artist: myNick, url, user_id: user.id }])
+      setSongTitle(''); setFile(null); loadMusic()
     }
-    await supabase.from('posts').insert([{ text: postText, username: myNick, image_url: img, user_id: user.id, likes_count: 0 }])
-    setPostText(''); setFile(null); loadPosts(); setLoading(false)
+    setLoading(false)
   }
 
   async function loadMessages() {
@@ -134,25 +147,25 @@ export default function Home() {
     bg: { background: '#0a0a0a', minHeight: '100vh', color: '#fff', fontFamily: 'sans-serif' },
     card: { background: '#161616', border: '1px solid #262626', borderRadius: '16px', padding: '15px', marginBottom: '15px' },
     input: { width: '100%', padding: '12px', background: '#000', border: '1px solid #262626', borderRadius: '10px', color: '#fff', boxSizing: 'border-box' as any },
-    btn: { background: '#fff', color: '#000', border: 'none', borderRadius: '10px', padding: '8px 12px', fontWeight: 'bold' as any, cursor: 'pointer', fontSize: '12px' },
+    btn: { background: '#fff', color: '#000', border: 'none', borderRadius: '10px', padding: '8px 12px', fontWeight: 'bold' as any, cursor: 'pointer' },
     nav: { borderBottom: '1px solid #262626', padding: '15px', display: 'flex', justifyContent: 'space-between', position: 'sticky' as any, top: 0, background: 'rgba(10,10,10,0.9)', zIndex: 10 },
     ava: { width: '40px', height: '40px', borderRadius: '50%', background: '#333', objectFit: 'cover' as any }
   }
 
   if (!user) return (
     <div style={{ ...s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={s.card}>
-            <h2>#HASHTAG</h2>
-            <input placeholder="Ник" style={s.input} onChange={e => setUsername(e.target.value)} />
-            <input type="password" placeholder="Пароль" style={{...s.input, marginTop: '10px'}} onChange={e => setPassword(e.target.value)} />
-            <button onClick={() => {
-                const email = `${username}@app.com`
-                supabase.auth.signInWithPassword({ email, password }).then(({data, error}) => {
-                    if (error) alert(error.message)
-                    else setUser(data.user)
-                })
-            }} style={{...s.btn, width: '100%', marginTop: '20px'}}>Войти</button>
-        </div>
+      <div style={s.card}>
+        <h2>#HASHTAG</h2>
+        <input placeholder="Ник" style={s.input} onChange={e => setUsername(e.target.value)} />
+        <input type="password" placeholder="Пароль" style={{...s.input, marginTop:'10px'}} onChange={e => setPassword(e.target.value)} />
+        <button onClick={() => {
+          const email = `${username}@app.com`
+          supabase.auth.signInWithPassword({ email, password }).then(({data, error}) => {
+            if (error) alert(error.message)
+            else setUser(data.user)
+          })
+        }} style={{...s.btn, width:'100%', marginTop:'20px'}}>Войти</button>
+      </div>
     </div>
   )
 
@@ -177,7 +190,10 @@ export default function Home() {
           <>
             <div style={s.card}>
               <textarea placeholder="Что нового?" style={{...s.input, border:'none', resize:'none' as any}} value={postText} onChange={e => setPostText(e.target.value)} />
-              <button onClick={createPost} disabled={loading} style={{...s.btn, marginTop: '10px'}}>Пост</button>
+              <div style={{display:'flex', justifyContent:'space-between', marginTop:'10px'}}>
+                <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} style={{fontSize:'12px'}} />
+                <button onClick={createPost} disabled={loading} style={s.btn}>Пост</button>
+              </div>
             </div>
             {posts.map(p => (
               <div key={p.id} style={s.card}>
@@ -192,9 +208,43 @@ export default function Home() {
           </>
         )}
 
+        {view === 'music' && (
+          <>
+            <div style={s.card}>
+              <input placeholder="Название..." style={s.input} value={songTitle} onChange={e => setSongTitle(e.target.value)} />
+              <input type="file" accept="audio/*" onChange={e => setFile(e.target.files?.[0] || null)} style={{marginTop:'10px'}} />
+              <button onClick={uploadMusic} style={{...s.btn, width:'100%', marginTop:'10px'}}>Загрузить</button>
+            </div>
+            {songs.map(sng => (
+              <div key={sng.id} style={{...s.card, border: playingId === sng.id ? '1px solid #3b82f6' : '1px solid #262626'}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems: 'center'}}>
+                    <b>{sng.title}</b>
+                    <button onClick={() => {
+                        if (playingId === sng.id) {
+                            if (audioRef.current?.paused) audioRef.current.play()
+                            else audioRef.current?.pause()
+                        } else {
+                            setPlayingId(sng.id); if (audioRef.current) { audioRef.current.src = sng.url; audioRef.current.play() }
+                        }
+                    }} style={s.btn}>{playingId === sng.id && !audioRef.current?.paused ? '⏸' : '▶'}</button>
+                </div>
+                {playingId === sng.id && (
+                  <div style={{marginTop:'10px'}}>
+                    <input type="range" style={{width:'100%'}} min="0" max={duration} value={currentTime} onChange={e => { if(audioRef.current) audioRef.current.currentTime = parseFloat(e.target.value) }} />
+                    <div style={{display:'flex', alignItems:'center', gap:'10px', marginTop:'5px'}}>
+                        <span style={{fontSize:'10px'}}>🔊</span>
+                        <input type="range" style={{flex:1}} min="0" max="1" step="0.01" value={volume} onChange={e => setVolume(parseFloat(e.target.value))} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </>
+        )}
+
         {view === 'people' && (
           <>
-            <input placeholder="Поиск людей..." style={{...s.input, marginBottom: '15px'}} onChange={e => setUserSearch(e.target.value)} />
+            <input placeholder="Поиск..." style={{...s.input, marginBottom:'15px'}} onChange={e => setUserSearch(e.target.value)} />
             {allUsers.map(u => (
               <div key={u.id} style={{...s.card, display:'flex', justifyContent:'space-between', alignItems: 'center'}}>
                 <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
@@ -202,7 +252,7 @@ export default function Home() {
                     <b>@{u.username}</b>
                 </div>
                 <div style={{display:'flex', gap:'5px'}}>
-                    <button onClick={() => {setChatWith(u.username); setView('chat')}} style={s.btn}>Написать</button>
+                    <button onClick={() => {setChatWith(u.username); setView('chat')}} style={s.btn}>Чат</button>
                     <button onClick={() => addFriend(u.id)} style={{...s.btn, background: '#3b82f6', color: '#fff'}}>+</button>
                 </div>
               </div>
@@ -211,39 +261,29 @@ export default function Home() {
         )}
 
         {view === 'friends' && (
-          <>
-            <h3 style={{marginBottom: '15px'}}>Мои друзья</h3>
-            {friends.length === 0 && <p style={{color: '#888'}}>У вас пока нет друзей</p>}
-            {friends.map(u => (
-              <div key={u.id} style={{...s.card, display:'flex', justifyContent:'space-between', alignItems: 'center'}}>
-                <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-                    <img src={u.avatar_url || 'https://via.placeholder.com/40'} style={s.ava} />
-                    <b>@{u.username}</b>
-                </div>
-                <button onClick={() => {setChatWith(u.username); setView('chat')}} style={s.btn}>Написать</button>
+          friends.map(u => (
+            <div key={u.id} style={{...s.card, display:'flex', justifyContent:'space-between', alignItems: 'center'}}>
+              <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+                  <img src={u.avatar_url || 'https://via.placeholder.com/40'} style={s.ava} />
+                  <b>@{u.username}</b>
               </div>
-            ))}
-          </>
+              <button onClick={() => {setChatWith(u.username); setView('chat')}} style={s.btn}>Чат</button>
+            </div>
+          ))
         )}
 
-        {/* ... Остальные блоки (Music, Profile, Chat) как в прошлом коде ... */}
         {view === 'profile' && (
            <div style={{...s.card, textAlign: 'center'}}>
-           <div style={{width:'80px', height:'80px', borderRadius:'50%', background:'#262626', margin:'0 auto 15px', overflow:'hidden'}}>
+             <div style={{width:'80px', height:'80px', borderRadius:'50%', background:'#262626', margin:'0 auto 15px', overflow:'hidden'}}>
                {myAvatar && <img src={myAvatar} style={{width:'100%', height:'100%', objectFit:'cover'}} />}
+             </div>
+             <h3>@{myNick}</h3>
+             <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{...s.btn, background: 'red', color: '#fff', width: '100%', marginTop: '20px'}}>Выход</button>
            </div>
-           <h3>@{myNick}</h3>
-           <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{...s.btn, background: 'red', color: '#fff', width: '100%', marginTop: '20px'}}>Выход</button>
-         </div>
-        )}
-
-        {view === 'music' && (
-            <div style={s.card}>Тут плеер (код из прошлого сообщения)</div>
         )}
 
         {view === 'chat' && (
           <div style={{...s.card, height: '70vh', display: 'flex', flexDirection: 'column'}}>
-            <div style={{paddingBottom:'10px'}}>Чат с <b>@{chatWith}</b></div>
             <div style={{flex: 1, overflowY: 'auto'}}>
               {messages.map(m => (
                 <div key={m.id} style={{textAlign: m.sender_name === myNick ? 'right' : 'left', margin: '10px 0'}}>
