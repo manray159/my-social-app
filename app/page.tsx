@@ -8,87 +8,154 @@ const supabase = createClient(
 )
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState<'feed' | 'friends' | 'messages'>('feed')
   const [posts, setPosts] = useState<any[]>([])
+  const [myFriends, setMyFriends] = useState<any[]>([])
+  const [myMessages, setMyMessages] = useState<any[]>([])
+  const [user, setUser] = useState<any>(null)
+  
+  // Состояния для форм
   const [text, setText] = useState('')
   const [file, setFile] = useState<File | null>(null)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [msgTarget, setMsgTarget] = useState('')
+  const [msgText, setMsgText] = useState('')
 
   useEffect(() => {
-    fetchPosts()
-  }, [])
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+    })
+    fetchData()
+  }, [user, activeTab])
 
-  async function fetchPosts() {
-    const { data } = await supabase.from('posts').select('*').order('created_at', { ascending: false })
-    if (data) setPosts(data)
+  async function fetchData() {
+    const { data: p } = await supabase.from('posts').select('*').order('created_at', { ascending: false })
+    if (p) setPosts(p)
+
+    if (user) {
+      const { data: f } = await supabase.from('friends').select('*').eq('user_email', user.email)
+      if (f) setMyFriends(f)
+
+      const { data: m } = await supabase.from('messages').select('*')
+        .or(`sender_email.eq.${user.email},receiver_email.eq.${user.email}`)
+        .order('created_at', { ascending: false })
+      if (m) setMyMessages(m)
+    }
+  }
+
+  async function handleAuth(type: 'login' | 'signup') {
+    setLoading(true)
+    const { data, error } = type === 'login' 
+      ? await supabase.auth.signInWithPassword({ email, password })
+      : await supabase.auth.signUp({ email, password })
+    if (error) alert("Ошибка: " + error.message)
+    else setUser(data.user)
+    setLoading(false)
+  }
+
+  async function addFriend(friendEmail: string) {
+    if (friendEmail === user.email) return
+    await supabase.from('friends').insert([{ user_email: user.email, friend_email: friendEmail }])
+    alert('Добавлен в друзья!')
+    fetchData()
+  }
+
+  async function sendMessage() {
+    if (!msgText || !msgTarget) return
+    await supabase.from('messages').insert([{ 
+      sender_email: user.email, 
+      receiver_email: msgTarget, 
+      content: msgText 
+    }])
+    setMsgText('')
+    alert('Сообщение отправлено!')
+    fetchData()
   }
 
   async function sendPost() {
     if (!text && !file) return
     setLoading(true)
-
-    let uploadedImageUrl = ""
-
+    let url = ""
     if (file) {
-      const fileName = `${Date.now()}-${file.name}`
-      const { data } = await supabase.storage.from('images').upload(fileName, file)
-      if (data) {
-        const { data: urlData } = supabase.storage.from('images').getPublicUrl(data.path)
-        uploadedImageUrl = urlData.publicUrl
-      }
+      const name = `${Date.now()}-${file.name}`
+      const { data } = await supabase.storage.from('images').upload(name, file)
+      if (data) url = supabase.storage.from('images').getPublicUrl(data.path).data.publicUrl
     }
+    await supabase.from('posts').insert([{ content: text, image_url: url, author: user.email }])
+    setText(''); setFile(null); setLoading(false); fetchData()
+  }
 
-    await supabase.from('posts').insert([{ 
-      content: text, 
-      image_url: uploadedImageUrl,
-      author: 'Я создатель' 
-    }])
-
-    setText('')
-    setFile(null)
-    setLoading(false)
-    fetchPosts()
+  if (!user) {
+    return (
+      <div style={{ padding: '50px', maxWidth: '400px', margin: '0 auto', textAlign: 'center', color: '#000', fontFamily: 'sans-serif' }}>
+        <h1 style={{ color: '#0070f3' }}>#HASHTAG</h1>
+        <input placeholder="Email" style={{ width: '100%', padding: '10px', marginBottom: '10px', color: '#000' }} onChange={e => setEmail(e.target.value)} />
+        <input type="password" placeholder="Пароль" style={{ width: '100%', padding: '10px', marginBottom: '10px', color: '#000' }} onChange={e => setPassword(e.target.value)} />
+        <button onClick={() => handleAuth('login')} style={{ width: '100%', padding: '10px', background: '#0070f3', color: '#fff', border: 'none', cursor: 'pointer', marginBottom: '5px' }}>Войти</button>
+        <button onClick={() => handleAuth('signup')} style={{ width: '100%', padding: '10px', background: '#eee', border: 'none', cursor: 'pointer' }}>Регистрация</button>
+      </div>
+    )
   }
 
   return (
-    <main style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#ffffff', minHeight: '100vh', color: '#000000' }}>
-      <h1 style={{ color: '#0070f3', textAlign: 'center' }}>#HASHTAG</h1>
-      
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '30px', padding: '20px', background: '#f0f2f5', borderRadius: '15px', border: '1px solid #ddd' }}>
-        <textarea 
-          value={text} 
-          onChange={(e) => setText(e.target.value)} 
-          placeholder="Что нового?"
-          style={{ 
-            padding: '12px', borderRadius: '8px', border: '1px solid #ccc', minHeight: '100px',
-            color: '#000000', backgroundColor: '#ffffff', fontSize: '16px' // Явно задаем черный текст на белом фоне
-          }}
-        />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <label style={{ cursor: 'pointer', padding: '8px 12px', background: '#e4e6eb', borderRadius: '8px', color: '#000' }}>
-                {file ? '✅ Фото выбрано' : '📎 Прикрепить фото'}
-                <input type="file" accept="image/*" hidden onChange={(e) => setFile(e.target.files?.[0] || null)} />
-            </label>
-            <button 
-              onClick={sendPost} 
-              disabled={loading}
-              style={{ padding: '10px 20px', background: '#0070f3', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
-            >
-              {loading ? 'Публикуем...' : 'Опубликовать'}
-            </button>
-        </div>
+    <main style={{ maxWidth: '600px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', color: '#000' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+        <h2 style={{ color: '#0070f3', margin: 0 }}>#HASHTAG</h2>
+        <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer' }}>Выход</button>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        {posts.map(post => (
-          <div key={post.id} style={{ padding: '20px', border: '1px solid #eee', borderRadius: '15px', background: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-            <div style={{ color: '#65676b', fontSize: '14px', marginBottom: '8px' }}>{post.author || 'Аноним'}</div>
-            <p style={{ fontSize: '16px', color: '#050505', margin: '0 0 10px 0' }}>{post.content}</p>
-            {post.image_url && (
-              <img src={post.image_url} alt="Пост" style={{ width: '100%', borderRadius: '10px' }} />
-            )}
-          </div>
-        ))}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+        <button onClick={() => setActiveTab('feed')} style={{ flex: 1, padding: '10px', background: activeTab === 'feed' ? '#0070f3' : '#eee', color: activeTab === 'feed' ? '#fff' : '#000', border: 'none', borderRadius: '5px' }}>Лента</button>
+        <button onClick={() => setActiveTab('friends')} style={{ flex: 1, padding: '10px', background: activeTab === 'friends' ? '#0070f3' : '#eee', color: activeTab === 'friends' ? '#fff' : '#000', border: 'none', borderRadius: '5px' }}>Друзья</button>
+        <button onClick={() => setActiveTab('messages')} style={{ flex: 1, padding: '10px', background: activeTab === 'messages' ? '#0070f3' : '#eee', color: activeTab === 'messages' ? '#fff' : '#000', border: 'none', borderRadius: '5px' }}>Чат</button>
       </div>
+
+      {activeTab === 'feed' && (
+        <div>
+          <div style={{ background: '#f0f2f5', padding: '15px', borderRadius: '10px', marginBottom: '20px' }}>
+            <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Что нового?" style={{ width: '100%', minHeight: '80px', padding: '10px', borderRadius: '5px', color: '#000' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
+              <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} />
+              <button onClick={sendPost} style={{ background: '#0070f3', color: '#fff', padding: '8px 15px', border: 'none', borderRadius: '5px' }}>Пост</button>
+            </div>
+          </div>
+          {posts.map(p => (
+            <div key={p.id} style={{ border: '1px solid #eee', padding: '15px', borderRadius: '10px', marginBottom: '15px' }}>
+              <div style={{ fontSize: '12px', color: '#0070f3', cursor: 'pointer' }} onClick={() => { setMsgTarget(p.author); setActiveTab('messages'); }}>@{p.author} (Написать)</div>
+              <button onClick={() => addFriend(p.author)} style={{ fontSize: '10px', background: '#eee', border: 'none', marginTop: '5px', cursor: 'pointer' }}>+ В друзья</button>
+              <p>{p.content}</p>
+              {p.image_url && <img src={p.image_url} style={{ width: '100%', borderRadius: '10px' }} />}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'friends' && (
+        <div>
+          <h3>Мои друзья</h3>
+          {myFriends.length === 0 && <p>У вас пока нет друзей</p>}
+          {myFriends.map(f => <div key={f.id} style={{ padding: '10px', borderBottom: '1px solid #eee' }}>👤 {f.friend_email}</div>)}
+        </div>
+      )}
+
+      {activeTab === 'messages' && (
+        <div>
+          <h3>Личные сообщения</h3>
+          <div style={{ marginBottom: '20px', display: 'flex', gap: '5px' }}>
+            <input placeholder="Кому (email)" value={msgTarget} onChange={e => setMsgTarget(e.target.value)} style={{ flex: 1, padding: '5px', color: '#000' }} />
+            <input placeholder="Текст..." value={msgText} onChange={e => setMsgText(e.target.value)} style={{ flex: 2, padding: '5px', color: '#000' }} />
+            <button onClick={sendMessage} style={{ background: '#0070f3', color: '#fff', border: 'none', padding: '5px 10px' }}>Send</button>
+          </div>
+          {myMessages.map(m => (
+            <div key={m.id} style={{ padding: '10px', background: m.sender_email === user.email ? '#e3f2fd' : '#f5f5f5', marginBottom: '5px', borderRadius: '5px' }}>
+              <small>{m.sender_email === user.email ? 'Вы' : m.sender_email}:</small>
+              <div>{m.content}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </main>
   )
 }
