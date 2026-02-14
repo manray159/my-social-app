@@ -12,15 +12,13 @@ export default function Home() {
   const [view, setView] = useState<'feed' | 'chat' | 'profile' | 'people' | 'music' | 'notifs'>('feed')
   const [loading, setLoading] = useState(false)
   
-  // Данные приложения
   const [posts, setPosts] = useState<any[]>([])
   const [allUsers, setAllUsers] = useState<any[]>([])
   const [songs, setSongs] = useState<any[]>([])
   const [notifications, setNotifications] = useState<any[]>([])
   const [messages, setMessages] = useState<any[]>([])
-  const [onlineUsers, setOnlineUsers] = useState<string[]>([]) // Для статуса "В сети"
+  const [onlineUsers, setOnlineUsers] = useState<string[]>([])
 
-  // Вводы
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [postText, setPostText] = useState('')
@@ -30,7 +28,8 @@ export default function Home() {
   const [msgText, setMsgText] = useState('')
   const [file, setFile] = useState<File | null>(null)
   
-  // Профиль
+  const [songTitle, setSongTitle] = useState('')
+  const [songArtist, setSongArtist] = useState('')
   const [myBio, setMyBio] = useState('')
   const [myAvatar, setMyAvatar] = useState('')
 
@@ -48,43 +47,39 @@ export default function Home() {
   useEffect(() => {
     if (!user) return
     loadPosts(); loadNotifications(); loadAllUsers()
+    if (view === 'music') loadMusic()
     
-    // Канал для статуса "В сети" (Presence)
-    const channel = supabase.channel('online-users', {
-      config: { presence: { key: myNick } }
-    })
-
+    const channel = supabase.channel('online-users', { config: { presence: { key: myNick } } })
     channel.on('presence', { event: 'sync' }, () => {
-      const state = channel.presenceState()
-      setOnlineUsers(Object.keys(state))
-    }).subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') await channel.track({ online_at: new Date().toISOString() })
-    })
+      setOnlineUsers(Object.keys(channel.presenceState()))
+    }).subscribe(async (s) => { if (s === 'SUBSCRIBED') await channel.track({ online_at: new Date() }) })
 
-    return () => { channel.unsubscribe() }
-  }, [user, view, searchQuery])
+    let interval: any
+    if (view === 'chat' && chatWith) { loadMessages(); interval = setInterval(loadMessages, 3000) }
+    return () => { channel.unsubscribe(); clearInterval(interval) }
+  }, [user, view, searchQuery, chatWith])
 
-  // --- ЛОГИКА ---
   async function loadProfile(nick: string) {
     const { data } = await supabase.from('profiles').select('*').eq('username', nick).maybeSingle()
     if (data) { setMyBio(data.bio || ''); setMyAvatar(data.avatar_url || '') }
   }
 
-  async function updateProfile() {
-    setLoading(true)
-    let url = myAvatar
-    if (file) {
-      const name = `avatars/${user.id}_${Date.now()}.png`
-      const { data } = await supabase.storage.from('images').upload(name, file)
-      if (data) url = supabase.storage.from('images').getPublicUrl(name).data.publicUrl
-    }
-    await supabase.from('profiles').update({ bio: myBio, avatar_url: url }).eq('id', user.id)
-    setMyAvatar(url); setLoading(false); alert("Профиль обновлен!")
-  }
-
   async function loadPosts() {
     const { data } = await supabase.from('posts').select('*, comments(*)').order('created_at', { ascending: false })
     if (data) setPosts(data)
+  }
+
+  async function createPost() {
+    if (!user || (!postText && !file)) return
+    setLoading(true)
+    let img = ''
+    if (file) {
+      const path = `posts/${Date.now()}.png`
+      const { data } = await supabase.storage.from('images').upload(path, file)
+      if (data) img = supabase.storage.from('images').getPublicUrl(path).data.publicUrl
+    }
+    await supabase.from('posts').insert([{ text: postText, username: myNick, image_url: img, user_id: user.id }])
+    setPostText(''); setFile(null); loadPosts(); setLoading(false)
   }
 
   async function handleLike(post: any) {
@@ -113,11 +108,6 @@ export default function Home() {
     if (data) setNotifications(data)
   }
 
-  async function loadAllUsers() {
-    const { data } = await supabase.from('profiles').select('*')
-    if (data) setAllUsers(data.filter(u => u.id !== user?.id))
-  }
-
   async function loadMusic() {
     let q = supabase.from('music').select('*')
     if (searchQuery) q = q.ilike('title', `%${searchQuery}%`)
@@ -125,12 +115,26 @@ export default function Home() {
     if (data) setSongs(data)
   }
 
+  async function uploadMusic() {
+    if (!file || !songTitle) return alert("Файл и название обязательны")
+    setLoading(true)
+    const path = `music/${Date.now()}_${file.name}`
+    const { data } = await supabase.storage.from('images').upload(path, file)
+    if (data) {
+      const url = supabase.storage.from('images').getPublicUrl(path).data.publicUrl
+      await supabase.from('music').insert([{ title: songTitle, artist: songArtist || 'Неизвестен', url, user_id: user.id }])
+      setSongTitle(''); setSongArtist(''); setFile(null); loadMusic()
+    }
+    setLoading(false)
+  }
+
+  async function loadAllUsers() {
+    const { data } = await supabase.from('profiles').select('*')
+    if (data) setAllUsers(data.filter(u => u.id !== user?.id))
+  }
+
   async function loadMessages() {
-    if (!chatWith) return
-    const { data } = await supabase.from('messages')
-      .select('*')
-      .or(`and(sender_name.eq.${myNick},receiver_name.eq.${chatWith}),and(sender_name.eq.${chatWith},receiver_name.eq.${myNick})`)
-      .order('created_at', { ascending: true })
+    const { data } = await supabase.from('messages').select('*').or(`and(sender_name.eq.${myNick},receiver_name.eq.${chatWith}),and(sender_name.eq.${chatWith},receiver_name.eq.${myNick})`).order('created_at', { ascending: true })
     if (data) setMessages(data)
   }
 
@@ -143,25 +147,18 @@ export default function Home() {
   async function handleAuth(type: 'login' | 'signup') {
     setLoading(true)
     const email = `${username}@app.com`
-    const { data, error } = type === 'login' 
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password })
+    const { data, error } = type === 'login' ? await supabase.auth.signInWithPassword({ email, password }) : await supabase.auth.signUp({ email, password })
     if (error) alert(error.message)
-    else {
-        setUser(data.user)
-        if (type === 'signup') await supabase.from('profiles').insert([{ id: data.user?.id, username }])
-    }
+    else { setUser(data.user); if (type === 'signup') await supabase.from('profiles').insert([{ id: data.user?.id, username }]) }
     setLoading(false)
   }
 
-  // --- СТИЛИ ---
   const s = {
     bg: { background: '#0a0a0a', minHeight: '100vh', color: '#fff', fontFamily: 'sans-serif' },
     card: { background: '#161616', border: '1px solid #262626', borderRadius: '16px', padding: '15px', marginBottom: '15px' },
     input: { width: '100%', padding: '12px', background: '#000', border: '1px solid #262626', borderRadius: '10px', color: '#fff', boxSizing: 'border-box' as any },
     btn: { background: '#fff', color: '#000', border: 'none', borderRadius: '10px', padding: '10px 15px', fontWeight: 'bold' as any, cursor: 'pointer' },
-    nav: { borderBottom: '1px solid #262626', padding: '15px', display: 'flex', justifyContent: 'space-between', position: 'sticky' as any, top: 0, background: 'rgba(10,10,10,0.9)', zIndex: 10 },
-    dot: { width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e', display: 'inline-block', marginRight: '5px' }
+    nav: { borderBottom: '1px solid #262626', padding: '15px', display: 'flex', justifyContent: 'space-between', position: 'sticky' as any, top: 0, background: 'rgba(10,10,10,0.9)', zIndex: 10 }
   }
 
   if (!user) return (
@@ -180,51 +177,54 @@ export default function Home() {
     <div style={s.bg}>
       <nav style={s.nav}>
         <b>#HASHTAG</b>
-        <div style={{ display: 'flex', gap: '15px', fontSize: '14px' }}>
+        <div style={{ display: 'flex', gap: '15px', fontSize: '13px' }}>
           <span onClick={() => setView('feed')} style={{ color: view==='feed'?'#fff':'#888', cursor:'pointer' }}>Лента</span>
-          <span onClick={() => setView('people')} style={{ color: view==='people'?'#fff':'#888', cursor:'pointer' }}>Люди</span>
           <span onClick={() => setView('music')} style={{ color: view==='music'?'#fff':'#888', cursor:'pointer' }}>Музыка</span>
+          <span onClick={() => setView('people')} style={{ color: view==='people'?'#fff':'#888', cursor:'pointer' }}>Люди</span>
           <span onClick={() => setView('notifs')} style={{ color: view==='notifs'?'#fff':'#888', cursor:'pointer' }}>Уведомления ({notifications.filter(n=>!n.is_read).length})</span>
           <span onClick={() => setView('profile')} style={{ color: view==='profile'?'#fff':'#888', cursor:'pointer' }}>Профиль</span>
         </div>
       </nav>
 
       <div style={{ maxWidth: '500px', margin: '20px auto', padding: '0 10px' }}>
-        {view === 'feed' && posts.map(p => (
-          <div key={p.id} style={s.card}>
-            <div style={{display:'flex', alignItems:'center', gap:'10px', marginBottom:'10px'}}>
+        {view === 'feed' && (
+          <>
+            <div style={s.card}>
+              <textarea placeholder="Что нового?" style={{...s.input, border:'none', resize:'none' as any}} value={postText} onChange={e => setPostText(e.target.value)} />
+              <div style={{display:'flex', justifyContent:'space-between', marginTop:'10px'}}>
+                <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} style={{fontSize:'12px'}} />
+                <button onClick={createPost} disabled={loading} style={s.btn}>Пост</button>
+              </div>
+            </div>
+            {posts.map(p => (
+              <div key={p.id} style={s.card}>
                 <b style={{color:'#3b82f6'}}>@{p.username}</b>
-                {onlineUsers.includes(p.username) && <span style={s.dot}></span>}
-            </div>
-            <p>{p.text}</p>
-            <button onClick={() => handleLike(p)} style={{background:'none', border:'1px solid #333', color:'#fff', borderRadius:'20px', padding:'5px 12px'}}>❤️ {p.likes_count || 0}</button>
-            <div style={{marginTop:'15px', borderTop:'1px solid #262626', paddingTop:'10px'}}>
-              {p.comments?.map((c: any) => (
-                <div key={c.id} style={{fontSize:'13px', marginBottom:'5px'}}><b style={{color:'#888'}}>@{c.username}:</b> {c.content}</div>
-              ))}
-              <input placeholder="Комментировать..." style={{...s.input, padding:'5px', marginTop:'10px'}} value={commentText[p.id] || ''} onChange={e => setCommentText({...commentText, [p.id]: e.target.value})} onKeyPress={e => e.key==='Enter' && addComment(p)} />
-            </div>
-          </div>
-        ))}
-
-        {view === 'people' && allUsers.map(u => (
-          <div key={u.id} style={{...s.card, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-            <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-                <div style={{width:'40px', height:'40px', borderRadius:'50%', background:'#262626', overflow:'hidden'}}>
-                    {u.avatar_url && <img src={u.avatar_url} style={{width:'100%', height:'100%', objectFit:'cover'}} />}
+                <p>{p.text}</p>
+                {p.image_url && <img src={p.image_url} style={{width:'100%', borderRadius:'12px', marginBottom:'10px'}} />}
+                <button onClick={() => handleLike(p)} style={{background:'none', border:'1px solid #333', color:'#fff', borderRadius:'20px', padding:'5px 12px'}}>❤️ {p.likes_count || 0}</button>
+                <div style={{marginTop:'15px', borderTop:'1px solid #262626', paddingTop:'10px'}}>
+                  {p.comments?.map((c: any) => (
+                    <div key={c.id} style={{fontSize:'13px', marginBottom:'5px'}}><b style={{color:'#888'}}>@{c.username}:</b> {c.content}</div>
+                  ))}
+                  <input placeholder="Комментировать..." style={{...s.input, padding:'5px', marginTop:'5px'}} value={commentText[p.id] || ''} onChange={e => setCommentText({...commentText, [p.id]: e.target.value})} onKeyPress={e => e.key==='Enter' && addComment(p)} />
                 </div>
-                <b>@{u.username}</b>
-                {onlineUsers.includes(u.username) && <span style={s.dot}></span>}
-            </div>
-            <button onClick={() => {setChatWith(u.username); setView('chat')}} style={s.btn}>Чат</button>
-          </div>
-        ))}
+              </div>
+            ))}
+          </>
+        )}
 
         {view === 'music' && (
           <>
-            <input placeholder="Поиск музыки..." style={s.input} onChange={e => setSearchQuery(e.target.value)} />
+            <div style={s.card}>
+              <h3>Загрузить трек</h3>
+              <input placeholder="Название" style={s.input} value={songTitle} onChange={e => setSongTitle(e.target.value)} />
+              <input placeholder="Артист" style={{...s.input, marginTop:'10px'}} value={songArtist} onChange={e => setSongArtist(e.target.value)} />
+              <input type="file" accept="audio/*" onChange={e => setFile(e.target.files?.[0] || null)} style={{marginTop:'10px'}} />
+              <button onClick={uploadMusic} disabled={loading} style={{...s.btn, width:'100%', marginTop:'15px'}}>Загрузить MP3</button>
+            </div>
+            <input placeholder="Поиск музыки..." style={{...s.input, marginBottom:'15px'}} onChange={e => setSearchQuery(e.target.value)} />
             {songs.map(sng => (
-              <div key={sng.id} style={{...s.card, display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:'10px'}}>
+              <div key={sng.id} style={{...s.card, display:'flex', alignItems:'center', justifyContent:'space-between'}}>
                 <div><b>{sng.title}</b><div style={{color:'#888', fontSize:'12px'}}>{sng.artist}</div></div>
                 <audio controls src={sng.url} style={{height:'30px', width:'150px'}} />
               </div>
@@ -232,9 +232,13 @@ export default function Home() {
           </>
         )}
 
-        {view === 'notifs' && notifications.map(n => (
-          <div key={n.id} style={{...s.card, color: n.is_read ? '#888':'#fff'}}>
-            <b>@{n.sender_name}</b> {n.type === 'like' ? 'лайкнул ваш пост' : 'прокомментировал пост'}
+        {view === 'people' && allUsers.map(u => (
+          <div key={u.id} style={{...s.card, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+            <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+              <b>@{u.username}</b>
+              {onlineUsers.includes(u.username) && <span style={{width:'8px', height:'8px', background:'#22c55e', borderRadius:'50%'}}></span>}
+            </div>
+            <button onClick={() => {setChatWith(u.username); setView('chat')}} style={s.btn}>Чат</button>
           </div>
         ))}
 
@@ -244,10 +248,8 @@ export default function Home() {
                 {myAvatar && <img src={myAvatar} style={{width:'100%', height:'100%', objectFit:'cover'}} />}
             </div>
             <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} style={{fontSize:'12px'}} />
-            <h2 style={{marginTop:'15px'}}>@{myNick}</h2>
-            <textarea placeholder="О себе..." style={s.input} value={myBio} onChange={e => setMyBio(e.target.value)} />
-            <button onClick={updateProfile} disabled={loading} style={{...s.btn, width:'100%', marginTop:'10px'}}>Сохранить</button>
-            <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{...s.btn, background:'#ef4444', color:'#fff', width:'100%', marginTop:'10px'}}>Выход</button>
+            <textarea placeholder="О себе..." style={{...s.input, marginTop:'15px'}} value={myBio} onChange={e => setMyBio(e.target.value)} />
+            <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{...s.btn, background:'#ef4444', color:'#fff', width:'100%', marginTop:'20px'}}>Выход</button>
           </div>
         )}
 
