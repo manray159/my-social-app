@@ -30,21 +30,17 @@ export default function Home() {
 
     if (file) {
       const fileName = `${Date.now()}-${file.name}`
-      const { data, error } = await supabase.storage
-        .from('images')
-        .upload(fileName, file)
-
+      const { data } = await supabase.storage.from('images').upload(fileName, file)
       if (data) {
         const { data: urlData } = supabase.storage.from('images').getPublicUrl(data.path)
         uploadedImageUrl = urlData.publicUrl
-      } else {
-        console.error("Ошибка загрузки:", error)
       }
     }
 
     await supabase.from('posts').insert([{ 
       content: text, 
-      image_url: uploadedImageUrl 
+      image_url: uploadedImageUrl,
+      author: 'Я создатель' 
     }])
 
     setText('')
@@ -54,43 +50,41 @@ export default function Home() {
   }
 
   return (
-    <main style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: 'system-ui' }}>
+    <main style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#ffffff', minHeight: '100vh', color: '#000000' }}>
       <h1 style={{ color: '#0070f3', textAlign: 'center' }}>#HASHTAG</h1>
       
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '30px', padding: '20px', background: '#f8f9fa', borderRadius: '15px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '30px', padding: '20px', background: '#f0f2f5', borderRadius: '15px', border: '1px solid #ddd' }}>
         <textarea 
           value={text} 
           onChange={(e) => setText(e.target.value)} 
-          placeholder="Что происходит?"
-          style={{ padding: '12px', borderRadius: '8px', border: '1px solid #ddd', minHeight: '80px', resize: 'vertical' }}
+          placeholder="Что нового?"
+          style={{ 
+            padding: '12px', borderRadius: '8px', border: '1px solid #ccc', minHeight: '100px',
+            color: '#000000', backgroundColor: '#ffffff', fontSize: '16px' // Явно задаем черный текст на белом фоне
+          }}
         />
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <label style={{ cursor: 'pointer', padding: '8px 12px', background: '#eee', borderRadius: '6px', fontSize: '14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <label style={{ cursor: 'pointer', padding: '8px 12px', background: '#e4e6eb', borderRadius: '8px', color: '#000' }}>
                 {file ? '✅ Фото выбрано' : '📎 Прикрепить фото'}
-                <input 
-                type="file" 
-                accept="image/*" 
-                hidden
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-                />
+                <input type="file" accept="image/*" hidden onChange={(e) => setFile(e.target.files?.[0] || null)} />
             </label>
-            {file && <button onClick={() => setFile(null)} style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer' }}>Удалить</button>}
+            <button 
+              onClick={sendPost} 
+              disabled={loading}
+              style={{ padding: '10px 20px', background: '#0070f3', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              {loading ? 'Публикуем...' : 'Опубликовать'}
+            </button>
         </div>
-        <button 
-          onClick={sendPost} 
-          disabled={loading}
-          style={{ padding: '12px', background: '#0070f3', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
-        >
-          {loading ? 'Публикация...' : 'Опубликовать пост'}
-        </button>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         {posts.map(post => (
-          <div key={post.id} style={{ padding: '20px', border: '1px solid #eee', borderRadius: '15px', background: 'white' }}>
-            <p style={{ fontSize: '16px', margin: '0 0 10px 0' }}>{post.content}</p>
+          <div key={post.id} style={{ padding: '20px', border: '1px solid #eee', borderRadius: '15px', background: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+            <div style={{ color: '#65676b', fontSize: '14px', marginBottom: '8px' }}>{post.author || 'Аноним'}</div>
+            <p style={{ fontSize: '16px', color: '#050505', margin: '0 0 10px 0' }}>{post.content}</p>
             {post.image_url && (
-              <img src={post.image_url} alt="post" style={{ width: '100%', borderRadius: '10px', display: 'block' }} />
+              <img src={post.image_url} alt="Пост" style={{ width: '100%', borderRadius: '10px' }} />
             )}
           </div>
         ))}
