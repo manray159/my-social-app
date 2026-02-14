@@ -14,7 +14,6 @@ export default function Home() {
   const [myMessages, setMyMessages] = useState<any[]>([])
   const [user, setUser] = useState<any>(null)
   
-  // Состояния для форм
   const [text, setText] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [email, setEmail] = useState('')
@@ -33,11 +32,9 @@ export default function Home() {
   async function fetchData() {
     const { data: p } = await supabase.from('posts').select('*').order('created_at', { ascending: false })
     if (p) setPosts(p)
-
     if (user) {
       const { data: f } = await supabase.from('friends').select('*').eq('user_email', user.email)
       if (f) setMyFriends(f)
-
       const { data: m } = await supabase.from('messages').select('*')
         .or(`sender_email.eq.${user.email},receiver_email.eq.${user.email}`)
         .order('created_at', { ascending: false })
@@ -46,6 +43,10 @@ export default function Home() {
   }
 
   async function handleAuth(type: 'login' | 'signup') {
+    if (!email || !password) {
+      alert("Введите email и пароль!");
+      return;
+    }
     setLoading(true)
     const { data, error } = type === 'login' 
       ? await supabase.auth.signInWithPassword({ email, password })
@@ -64,13 +65,9 @@ export default function Home() {
 
   async function sendMessage() {
     if (!msgText || !msgTarget) return
-    await supabase.from('messages').insert([{ 
-      sender_email: user.email, 
-      receiver_email: msgTarget, 
-      content: msgText 
-    }])
+    await supabase.from('messages').insert([{ sender_email: user.email, receiver_email: msgTarget, content: msgText }])
     setMsgText('')
-    alert('Сообщение отправлено!')
+    alert('Отправлено!')
     fetchData()
   }
 
@@ -87,46 +84,66 @@ export default function Home() {
     setText(''); setFile(null); setLoading(false); fetchData()
   }
 
+  const inputStyle = {
+    width: '100%',
+    padding: '12px',
+    marginBottom: '10px',
+    borderRadius: '8px',
+    border: '1px solid #ccc',
+    color: '#000000', // Явно черный текст
+    backgroundColor: '#f9f9f9', // Светло-серый фон
+    fontSize: '16px'
+  }
+
   if (!user) {
     return (
-      <div style={{ padding: '50px', maxWidth: '400px', margin: '0 auto', textAlign: 'center', color: '#000', fontFamily: 'sans-serif' }}>
+      <div style={{ padding: '50px', maxWidth: '400px', margin: '0 auto', textAlign: 'center', fontFamily: 'sans-serif' }}>
         <h1 style={{ color: '#0070f3' }}>#HASHTAG</h1>
-        <input placeholder="Email" style={{ width: '100%', padding: '10px', marginBottom: '10px', color: '#000' }} onChange={e => setEmail(e.target.value)} />
-        <input type="password" placeholder="Пароль" style={{ width: '100%', padding: '10px', marginBottom: '10px', color: '#000' }} onChange={e => setPassword(e.target.value)} />
-        <button onClick={() => handleAuth('login')} style={{ width: '100%', padding: '10px', background: '#0070f3', color: '#fff', border: 'none', cursor: 'pointer', marginBottom: '5px' }}>Войти</button>
-        <button onClick={() => handleAuth('signup')} style={{ width: '100%', padding: '10px', background: '#eee', border: 'none', cursor: 'pointer' }}>Регистрация</button>
+        <p style={{ color: '#666' }}>Введите данные для входа</p>
+        <input placeholder="Ваш Email" style={inputStyle} value={email} onChange={e => setEmail(e.target.value)} />
+        <input type="password" placeholder="Пароль" style={inputStyle} value={password} onChange={e => setPassword(e.target.value)} />
+        <button onClick={() => handleAuth('login')} style={{ width: '100%', padding: '12px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', marginBottom: '10px', fontWeight: 'bold' }}>Войти</button>
+        <button onClick={() => handleAuth('signup')} style={{ width: '100%', padding: '12px', background: '#e4e6eb', color: '#000', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Регистрация</button>
       </div>
     )
   }
 
   return (
-    <main style={{ maxWidth: '600px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', color: '#000' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+    <main style={{ maxWidth: '600px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', backgroundColor: '#fff', minHeight: '100vh' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h2 style={{ color: '#0070f3', margin: 0 }}>#HASHTAG</h2>
-        <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer' }}>Выход</button>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: '12px', color: '#666' }}>{user.email}</div>
+          <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>Выйти</button>
+        </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-        <button onClick={() => setActiveTab('feed')} style={{ flex: 1, padding: '10px', background: activeTab === 'feed' ? '#0070f3' : '#eee', color: activeTab === 'feed' ? '#fff' : '#000', border: 'none', borderRadius: '5px' }}>Лента</button>
-        <button onClick={() => setActiveTab('friends')} style={{ flex: 1, padding: '10px', background: activeTab === 'friends' ? '#0070f3' : '#eee', color: activeTab === 'friends' ? '#fff' : '#000', border: 'none', borderRadius: '5px' }}>Друзья</button>
-        <button onClick={() => setActiveTab('messages')} style={{ flex: 1, padding: '10px', background: activeTab === 'messages' ? '#0070f3' : '#eee', color: activeTab === 'messages' ? '#fff' : '#000', border: 'none', borderRadius: '5px' }}>Чат</button>
+      <div style={{ display: 'flex', gap: '5px', marginBottom: '20px' }}>
+        {['feed', 'friends', 'messages'].map((t) => (
+          <button key={t} onClick={() => setActiveTab(t as any)} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', cursor: 'pointer', background: activeTab === t ? '#0070f3' : '#f0f2f5', color: activeTab === t ? '#fff' : '#000' }}>
+            {t === 'feed' ? 'Лента' : t === 'friends' ? 'Друзья' : 'Чат'}
+          </button>
+        ))}
       </div>
 
       {activeTab === 'feed' && (
         <div>
-          <div style={{ background: '#f0f2f5', padding: '15px', borderRadius: '10px', marginBottom: '20px' }}>
-            <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Что нового?" style={{ width: '100%', minHeight: '80px', padding: '10px', borderRadius: '5px', color: '#000' }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
-              <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} />
-              <button onClick={sendPost} style={{ background: '#0070f3', color: '#fff', padding: '8px 15px', border: 'none', borderRadius: '5px' }}>Пост</button>
+          <div style={{ background: '#f0f2f5', padding: '15px', borderRadius: '12px', marginBottom: '20px' }}>
+            <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Что нового?" style={{ ...inputStyle, minHeight: '100px' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} style={{ fontSize: '12px' }} />
+              <button onClick={sendPost} style={{ background: '#0070f3', color: '#fff', padding: '10px 20px', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}>Опубликовать</button>
             </div>
           </div>
           {posts.map(p => (
-            <div key={p.id} style={{ border: '1px solid #eee', padding: '15px', borderRadius: '10px', marginBottom: '15px' }}>
-              <div style={{ fontSize: '12px', color: '#0070f3', cursor: 'pointer' }} onClick={() => { setMsgTarget(p.author); setActiveTab('messages'); }}>@{p.author} (Написать)</div>
-              <button onClick={() => addFriend(p.author)} style={{ fontSize: '10px', background: '#eee', border: 'none', marginTop: '5px', cursor: 'pointer' }}>+ В друзья</button>
-              <p>{p.content}</p>
-              {p.image_url && <img src={p.image_url} style={{ width: '100%', borderRadius: '10px' }} />}
+            <div key={p.id} style={{ border: '1px solid #eee', padding: '15px', borderRadius: '12px', marginBottom: '15px' }}>
+              <div style={{ color: '#0070f3', fontWeight: 'bold', marginBottom: '5px' }}>{p.author}</div>
+              <p style={{ color: '#000', margin: '10px 0' }}>{p.content}</p>
+              {p.image_url && <img src={p.image_url} style={{ width: '100%', borderRadius: '8px' }} />}
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button onClick={() => { setMsgTarget(p.author); setActiveTab('messages'); }} style={{ fontSize: '12px', color: '#0070f3', background: 'none', border: 'none', cursor: 'pointer' }}>✉ Сообщение</button>
+                <button onClick={() => addFriend(p.author)} style={{ fontSize: '12px', color: '#666', background: 'none', border: 'none', cursor: 'pointer' }}>+ В друзья</button>
+              </div>
             </div>
           ))}
         </div>
@@ -135,22 +152,22 @@ export default function Home() {
       {activeTab === 'friends' && (
         <div>
           <h3>Мои друзья</h3>
-          {myFriends.length === 0 && <p>У вас пока нет друзей</p>}
-          {myFriends.map(f => <div key={f.id} style={{ padding: '10px', borderBottom: '1px solid #eee' }}>👤 {f.friend_email}</div>)}
+          {myFriends.length === 0 && <p style={{ color: '#999' }}>Список пуст</p>}
+          {myFriends.map(f => <div key={f.id} style={{ padding: '12px', borderBottom: '1px solid #eee', color: '#000' }}>👤 {f.friend_email}</div>)}
         </div>
       )}
 
       {activeTab === 'messages' && (
         <div>
-          <h3>Личные сообщения</h3>
-          <div style={{ marginBottom: '20px', display: 'flex', gap: '5px' }}>
-            <input placeholder="Кому (email)" value={msgTarget} onChange={e => setMsgTarget(e.target.value)} style={{ flex: 1, padding: '5px', color: '#000' }} />
-            <input placeholder="Текст..." value={msgText} onChange={e => setMsgText(e.target.value)} style={{ flex: 2, padding: '5px', color: '#000' }} />
-            <button onClick={sendMessage} style={{ background: '#0070f3', color: '#fff', border: 'none', padding: '5px 10px' }}>Send</button>
+          <h3>Чат</h3>
+          <div style={{ display: 'flex', gap: '5px', marginBottom: '20px' }}>
+            <input placeholder="Кому (Email)" value={msgTarget} onChange={e => setMsgTarget(e.target.value)} style={{ ...inputStyle, flex: 1, marginBottom: 0 }} />
+            <input placeholder="Сообщение..." value={msgText} onChange={e => setMsgText(e.target.value)} style={{ ...inputStyle, flex: 2, marginBottom: 0 }} />
+            <button onClick={sendMessage} style={{ background: '#0070f3', color: '#fff', padding: '0 15px', border: 'none', borderRadius: '8px' }}>🚀</button>
           </div>
           {myMessages.map(m => (
-            <div key={m.id} style={{ padding: '10px', background: m.sender_email === user.email ? '#e3f2fd' : '#f5f5f5', marginBottom: '5px', borderRadius: '5px' }}>
-              <small>{m.sender_email === user.email ? 'Вы' : m.sender_email}:</small>
+            <div key={m.id} style={{ padding: '10px', background: m.sender_email === user.email ? '#e3f2fd' : '#f5f5f5', marginBottom: '8px', borderRadius: '10px', color: '#000' }}>
+              <div style={{ fontSize: '10px', color: '#666' }}>{m.sender_email === user.email ? 'Вы' : m.sender_email}</div>
               <div>{m.content}</div>
             </div>
           ))}
