@@ -1,80 +1,100 @@
-'use client';
-import { useEffect, useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+'use client'
+import { useState, useEffect } from 'react'
+import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+)
 
 export default function Home() {
-  const [posts, setPosts] = useState<any[]>([]);
-  const [content, setContent] = useState('');
-  const [author, setAuthor] = useState('Аноним');
+  const [posts, setPosts] = useState<any[]>([])
+  const [text, setText] = useState('')
+  const [file, setFile] = useState<File | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  // 1. Загрузка постов
-  const fetchPosts = async () => {
-    const { data } = await supabase
-      .from('posts')
-      .select('*')
-      .order('id', { ascending: false });
-    if (data) setPosts(data);
-  };
+  useEffect(() => {
+    fetchPosts()
+  }, [])
 
-  useEffect(() => { fetchPosts(); }, []);
+  async function fetchPosts() {
+    const { data } = await supabase.from('posts').select('*').order('created_at', { ascending: false })
+    if (data) setPosts(data)
+  }
 
-  // 2. Отправка поста
-  const sendPost = async () => {
-    if (!content) return;
-    const { error } = await supabase
-      .from('posts')
-      .insert([{ author, content }]);
-    
-    if (!error) {
-      setContent('');
-      fetchPosts(); // Обновляем ленту
-    } else {
-      alert("Ошибка! Проверь, создал ли ты таблицу 'posts' в Supabase");
+  async function sendPost() {
+    if (!text && !file) return
+    setLoading(true)
+
+    let uploadedImageUrl = ""
+
+    if (file) {
+      const fileName = `${Date.now()}-${file.name}`
+      const { data, error } = await supabase.storage
+        .from('images')
+        .upload(fileName, file)
+
+      if (data) {
+        const { data: urlData } = supabase.storage.from('images').getPublicUrl(data.path)
+        uploadedImageUrl = urlData.publicUrl
+      } else {
+        console.error("Ошибка загрузки:", error)
+      }
     }
-  };
+
+    await supabase.from('posts').insert([{ 
+      content: text, 
+      image_url: uploadedImageUrl 
+    }])
+
+    setText('')
+    setFile(null)
+    setLoading(false)
+    fetchPosts()
+  }
 
   return (
-    <main className="min-h-screen bg-black text-white p-4 sm:p-8">
-      <div className="max-w-2xl mx-auto">
-        <h1 className="text-4xl font-black mb-8 text-blue-500 italic">#HASHTAG</h1>
-
-        {/* Форма создания поста */}
-        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 mb-10 shadow-2xl">
-          <input 
-            className="bg-transparent text-blue-400 font-bold mb-2 block outline-none"
-            placeholder="Твоё имя..."
-            value={author}
-            onChange={(e) => setAuthor(e.target.value)}
-          />
-          <textarea 
-            className="bg-transparent w-full h-24 resize-none text-xl outline-none"
-            placeholder="Что нового?"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-          />
-          <button 
-            onClick={sendPost}
-            className="bg-blue-600 hover:bg-blue-500 px-8 py-2 rounded-full font-bold transition-all mt-2"
-          >
-            Опубликовать
-          </button>
+    <main style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: 'system-ui' }}>
+      <h1 style={{ color: '#0070f3', textAlign: 'center' }}>#HASHTAG</h1>
+      
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '30px', padding: '20px', background: '#f8f9fa', borderRadius: '15px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+        <textarea 
+          value={text} 
+          onChange={(e) => setText(e.target.value)} 
+          placeholder="Что происходит?"
+          style={{ padding: '12px', borderRadius: '8px', border: '1px solid #ddd', minHeight: '80px', resize: 'vertical' }}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <label style={{ cursor: 'pointer', padding: '8px 12px', background: '#eee', borderRadius: '6px', fontSize: '14px' }}>
+                {file ? '✅ Фото выбрано' : '📎 Прикрепить фото'}
+                <input 
+                type="file" 
+                accept="image/*" 
+                hidden
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                />
+            </label>
+            {file && <button onClick={() => setFile(null)} style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer' }}>Удалить</button>}
         </div>
+        <button 
+          onClick={sendPost} 
+          disabled={loading}
+          style={{ padding: '12px', background: '#0070f3', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+        >
+          {loading ? 'Публикация...' : 'Опубликовать пост'}
+        </button>
+      </div>
 
-        {/* Лента */}
-        <div className="space-y-6">
-          {posts.map((post) => (
-            <div key={post.id} className="bg-zinc-900/50 p-6 rounded-3xl border border-zinc-800/50">
-              <p className="text-blue-500 font-bold mb-2">@{post.author}</p>
-              <p className="text-xl text-zinc-200">{post.content}</p>
-            </div>
-          ))}
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {posts.map(post => (
+          <div key={post.id} style={{ padding: '20px', border: '1px solid #eee', borderRadius: '15px', background: 'white' }}>
+            <p style={{ fontSize: '16px', margin: '0 0 10px 0' }}>{post.content}</p>
+            {post.image_url && (
+              <img src={post.image_url} alt="post" style={{ width: '100%', borderRadius: '10px', display: 'block' }} />
+            )}
+          </div>
+        ))}
       </div>
     </main>
-  );
+  )
 }
