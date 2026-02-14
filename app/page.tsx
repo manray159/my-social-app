@@ -9,22 +9,28 @@ const supabase = createClient(
 
 export default function Home() {
   const [user, setUser] = useState<any>(null)
-  const [view, setView] = useState<'feed' | 'chat' | 'profile' | 'people' | 'music' | 'notifs'>('feed')
+  const [view, setView] = useState<'feed' | 'chat' | 'profile' | 'people' | 'music'>('feed')
   const [posts, setPosts] = useState<any[]>([])
   const [allUsers, setAllUsers] = useState<any[]>([])
   const [messages, setMessages] = useState<any[]>([])
-  const [notifications, setNotifications] = useState<any[]>([])
-  const [songs, setSongs] = useState<any[]>([
-    { id: 1, title: 'Back In Black', artist: 'AC/DC', url: '#' },
-    { id: 2, title: 'Starboy', artist: 'The Weeknd', url: '#' }
-  ])
-
+  
+  // Поля ввода для постов
   const [postText, setPostText] = useState('')
+  const [postImg, setPostImg] = useState('')
+  
+  // Поля ввода для музыки
+  const [songs, setSongs] = useState([
+    { id: 1, title: 'Back In Black', artist: 'AC/DC' },
+    { id: 2, title: 'Starboy', artist: 'The Weeknd' }
+  ])
+  const [newSongTitle, setNewSongTitle] = useState('')
+  const [newSongArtist, setNewSongArtist] = useState('')
+
+  // Поля для чата
   const [chatWith, setChatWith] = useState('')
   const [msgText, setMsgText] = useState('')
-  const [myBio, setMyBio] = useState('Frontend Developer & Creator')
 
-  const myNick = user?.email?.split('@')[0] || ''
+  const myNick = user?.email?.split('@')[0] || 'Аноним'
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -37,10 +43,8 @@ export default function Home() {
     if (view === 'feed') loadPosts()
     if (view === 'people') loadAllUsers()
     if (view === 'chat' && chatWith) loadMessages()
-    if (view === 'notifs') loadNotifications()
   }, [user, view, chatWith])
 
-  // --- ФУНКЦИИ (Твой оригинал) ---
   async function loadPosts() {
     const { data } = await supabase.from('posts').select('*').order('created_at', { ascending: false })
     if (data) setPosts(data)
@@ -49,11 +53,6 @@ export default function Home() {
   async function loadAllUsers() {
     const { data } = await supabase.from('profiles').select('*')
     if (data) setAllUsers(data.filter(u => u.username !== myNick))
-  }
-
-  async function handleLike(post: any) {
-    const { error } = await supabase.from('posts').update({ likes_count: (post.likes_count || 0) + 1 }).eq('id', post.id)
-    if (!error) loadPosts()
   }
 
   async function loadMessages() {
@@ -70,172 +69,114 @@ export default function Home() {
     setMsgText(''); loadMessages()
   }
 
-  async function loadNotifications() {
-    const { data } = await supabase.from('notifications').select('*').eq('user_id', user.id)
-    if (data) setNotifications(data)
+  const addSong = () => {
+    if (!newSongTitle || !newSongArtist) return
+    const newSong = { id: Date.now(), title: newSongTitle, artist: newSongArtist }
+    setSongs([...songs, newSong])
+    setNewSongTitle(''); setNewSongArtist('')
   }
 
-  // --- ДИЗАЙНЕРСКИЕ СТИЛИ ---
   const s = {
-    bg: { background: '#050505', minHeight: '100vh', color: '#fff', fontFamily: 'Inter, sans-serif' },
-    nav: { 
-      display: 'flex', justifyContent: 'space-around', padding: '20px', 
-      background: 'rgba(10, 10, 10, 0.8)', backdropFilter: 'blur(15px)',
-      borderBottom: '1px solid #222', position: 'sticky' as any, top: 0, zIndex: 10 
-    },
-    card: { 
-      background: '#111', padding: '20px', borderRadius: '20px', 
-      marginBottom: '15px', border: '1px solid #222', boxShadow: '0 4px 20px rgba(0,0,0,0.5)' 
-    },
-    btn: { 
-      background: 'linear-gradient(135deg, #fff 0%, #ddd 100%)', color: '#000', 
-      padding: '10px 20px', borderRadius: '12px', fontWeight: '700', 
-      border: 'none', cursor: 'pointer', transition: '0.2s'
-    },
-    input: { 
-      width: '100%', padding: '14px', background: '#1a1a1a', 
-      border: '1px solid #333', color: '#fff', borderRadius: '12px', marginBottom: '10px',
-      outline: 'none'
-    },
-    navItem: (active: boolean) => ({
-      color: active ? '#fff' : '#666',
-      fontSize: '18px',
-      fontWeight: active ? '700' : '400',
-      cursor: 'pointer',
-      transition: '0.3s'
-    })
+    bg: { background: '#000', minHeight: '100vh', color: '#fff', fontFamily: 'sans-serif' },
+    nav: { display: 'flex', justifyContent: 'space-around', padding: '15px', borderBottom: '1px solid #222', sticky: 'top', background: '#000', cursor: 'pointer' },
+    card: { background: '#111', padding: '15px', borderRadius: '15px', marginBottom: '15px', border: '1px solid #222' },
+    btn: { background: '#fff', color: '#000', padding: '10px 20px', borderRadius: '10px', fontWeight: 'bold', border: 'none', cursor: 'pointer' },
+    input: { width: '100%', padding: '10px', background: '#0a0a0a', border: '1px solid #333', color: '#fff', borderRadius: '8px', marginBottom: '10px' }
   }
 
   if (!user) return (
-    <div style={{...s.bg, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center'}}>
-      <h1 style={{fontSize: '48px', marginBottom: '20px', letterSpacing: '-2px'}}>#HASHTAG</h1>
-      <button style={{...s.btn, padding: '15px 40px'}} onClick={() => {
-        const nick = prompt("Введите ваш ник:")
-        if (nick) setUser({ email: `${nick}@app.com`, id: 'temp-id' })
-      }}>Войти в систему</button>
+    <div style={{...s.bg, display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column'}}>
+      <h1 style={{fontSize: '50px', marginBottom: '20px'}}>#HASHTAG</h1>
+      <button style={s.btn} onClick={() => {
+        const nick = prompt("Твой ник:")
+        if (nick) setUser({ email: `${nick}@app.com` })
+      }}>Войти</button>
     </div>
   )
 
   return (
     <div style={s.bg}>
       <header style={s.nav}>
-        <span style={s.navItem(view === 'feed')} onClick={() => setView('feed')}>Лента</span>
-        <span style={s.navItem(view === 'people')} onClick={() => setView('people')}>Люди</span>
-        <span style={s.navItem(view === 'music')} onClick={() => setView('music')}>Музыка</span>
-        <span style={s.navItem(view === 'notifs')} onClick={() => setView('notifs')}>🔔</span>
-        <span style={s.navItem(view === 'profile')} onClick={() => setView('profile')}>Профиль</span>
+        <span onClick={() => setView('feed')}>Лента</span>
+        <span onClick={() => setView('people')}>Люди</span>
+        <span onClick={() => setView('music')}>Музыка</span>
+        <span onClick={() => setView('profile')}>Профиль</span>
       </header>
 
-      <main style={{ maxWidth: '600px', margin: '0 auto', padding: '20px' }}>
+      <main style={{ maxWidth: '500px', margin: '0 auto', padding: '20px' }}>
         {view === 'feed' && (
           <>
-            <div style={{...s.card, background: 'linear-gradient(to right, #111, #1a1a1a)'}}>
-              <textarea 
-                placeholder="Поделитесь мыслями..." 
-                style={{...s.input, minHeight: '100px', resize: 'none'}} 
-                value={postText} 
-                onChange={e => setPostText(e.target.value)} 
-              />
-              <div style={{display: 'flex', justifyContent: 'flex-end'}}>
-                <button style={s.btn} onClick={async () => {
-                  await supabase.from('posts').insert([{ text: postText, username: myNick, user_id: user.id }])
-                  setPostText(''); loadPosts()
-                }}>Опубликовать</button>
-              </div>
+            <div style={s.card}>
+              <textarea placeholder="Что нового?" style={s.input} value={postText} onChange={e => setPostText(e.target.value)} />
+              <input placeholder="Ссылка на фото" style={s.input} value={postImg} onChange={e => setPostImg(e.target.value)} />
+              <button style={s.btn} onClick={async () => {
+                await supabase.from('posts').insert([{ text: postText, image_url: postImg, username: myNick }])
+                setPostText(''); setPostImg(''); loadPosts()
+              }}>Опубликовать</button>
             </div>
             {posts.map(p => (
               <div key={p.id} style={s.card}>
-                <div style={{display: 'flex', alignItems: 'center', marginBottom: '10px'}}>
-                  <div style={{width: '40px', height: '40px', borderRadius: '50%', background: '#333', marginRight: '10px'}}></div>
-                  <b style={{color: '#fff', fontSize: '16px'}}>@{p.username}</b>
-                </div>
-                <p style={{fontSize: '18px', lineHeight: '1.5', color: '#ccc'}}>{p.text}</p>
-                <button 
-                  onClick={() => handleLike(p)} 
-                  style={{background: '#222', border: 'none', color: '#fff', borderRadius: '20px', padding: '8px 16px', marginTop: '10px', cursor: 'pointer'}}
-                >
-                  ❤️ {p.likes_count || 0}
-                </button>
+                <b style={{color: '#0070f3'}}>@{p.username}</b>
+                <p>{p.text}</p>
+                {p.image_url && <img src={p.image_url} style={{width: '100%', borderRadius: '10px', marginTop: '10px'}} />}
               </div>
             ))}
           </>
         )}
 
         {view === 'music' && (
-          <div style={s.card}>
-            <h2 style={{marginBottom: '20px'}}>Плейлист</h2>
-            {songs.map(sng => (
-              <div key={sng.id} style={{padding: '15px', background: '#1a1a1a', borderRadius: '12px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                <div>
-                  <div style={{fontWeight: '700'}}>{sng.title}</div>
-                  <div style={{color: '#666', fontSize: '14px'}}>{sng.artist}</div>
+          <>
+            <div style={s.card}>
+              <h4>Добавить музыку</h4>
+              <input placeholder="Название трека" style={s.input} value={newSongTitle} onChange={e => setNewSongTitle(e.target.value)} />
+              <input placeholder="Исполнитель" style={s.input} value={newSongArtist} onChange={e => setNewSongArtist(e.target.value)} />
+              <button style={s.btn} onClick={addSong}>Добавить в список</button>
+            </div>
+            <div style={s.card}>
+              <h3>Твой плейлист</h3>
+              {songs.map(song => (
+                <div key={song.id} style={{padding: '10px 0', borderBottom: '1px solid #222', display: 'flex', justifyContent: 'space-between'}}>
+                  <span>{song.title} — {song.artist}</span>
+                  <button style={{background: 'none', border: 'none', color: '#0070f3'}}>▶️</button>
                 </div>
-                <button style={{background: '#fff', border: 'none', width: '35px', height: '35px', borderRadius: '50%', cursor: 'pointer'}}>▶️</button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </>
         )}
 
-        {view === 'people' && (
-          <div>
-            <h2 style={{marginBottom: '20px'}}>Люди в Hashtag</h2>
-            {allUsers.map(u => (
-              <div key={u.id} style={{...s.card, display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                <div style={{display: 'flex', alignItems: 'center'}}>
-                  <div style={{width: '45px', height: '45px', borderRadius: '50%', background: '#333', marginRight: '15px'}}></div>
-                  <b>@{u.username}</b>
-                </div>
-                <button style={s.btn} onClick={() => { setChatWith(u.username); setView('chat') }}>Написать</button>
-              </div>
-            ))}
+        {view === 'people' && allUsers.map(u => (
+          <div key={u.id} style={{...s.card, display: 'flex', justifyContent: 'space-between'}}>
+            <b>@{u.username}</b>
+            <button style={s.btn} onClick={() => { setChatWith(u.username); setView('chat') }}>Чат</button>
           </div>
-        )}
+        ))}
 
         {view === 'chat' && (
-          <div style={{...s.card, height: '80vh', display: 'flex', flexDirection: 'column', padding: '0'}}>
-            <div style={{padding: '20px', borderBottom: '1px solid #222'}}>
-              <h4 style={{margin: 0}}>Чат с @{chatWith}</h4>
-            </div>
-            <div style={{flex: 1, overflowY: 'auto', padding: '20px'}}>
+          <div style={{...s.card, height: '70vh', display: 'flex', flexDirection: 'column'}}>
+            <h4>Чат с {chatWith}</h4>
+            <div style={{flex: 1, overflowY: 'auto'}}>
               {messages.map(m => (
-                <div key={m.id} style={{textAlign: m.sender_name === myNick ? 'right' : 'left', margin: '12px 0'}}>
-                  <span style={{
-                    background: m.sender_name === myNick ? '#fff' : '#222', 
-                    color: m.sender_name === myNick ? '#000' : '#fff', 
-                    padding: '10px 16px', borderRadius: '18px', display: 'inline-block', maxWidth: '80%'
-                  }}>
+                <div key={m.id} style={{textAlign: m.sender_name === myNick ? 'right' : 'left', margin: '10px 0'}}>
+                  <span style={{background: m.sender_name === myNick ? '#0070f3' : '#333', padding: '8px 12px', borderRadius: '15px'}}>
                     {m.content}
                   </span>
                 </div>
               ))}
             </div>
-            <div style={{padding: '20px', background: '#0a0a0a', borderTop: '1px solid #222', display: 'flex', gap: '10px'}}>
-              <input 
-                style={{...s.input, marginBottom: 0}} 
-                placeholder="Сообщение..."
-                value={msgText} 
-                onChange={e => setMsgText(e.target.value)} 
-                onKeyPress={e => e.key === 'Enter' && sendMsg()} 
-              />
-              <button style={{...s.btn, borderRadius: '50%', width: '50px', height: '50px', padding: 0}} onClick={sendMsg}>🚀</button>
+            <div style={{display: 'flex', gap: '5px', marginTop: '10px'}}>
+              <input style={{...s.input, marginBottom: 0}} value={msgText} onChange={e => setMsgText(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendMsg()} />
+              <button style={s.btn} onClick={sendMsg}>→</button>
             </div>
           </div>
         )}
 
         {view === 'profile' && (
-          <div style={{textAlign: 'center'}}>
-            <div style={{...s.card, paddingTop: '40px'}}>
-              <div style={{width: '120px', height: '120px', background: 'linear-gradient(45deg, #333, #666)', borderRadius: '50%', margin: '0 auto 20px', border: '4px solid #222'}}></div>
-              <h2 style={{margin: '0'}}>@{myNick}</h2>
-              <p style={{color: '#666', marginBottom: '30px'}}>{myBio}</p>
-              <div style={{display: 'flex', gap: '10px'}}>
-                <button style={{...s.btn, flex: 1}}>Редактировать</button>
-                <button style={{...s.btn, flex: 1, background: '#ff4b4b', color: '#fff'}} onClick={() => supabase.auth.signOut().then(() => setUser(null))}>Выйти</button>
-              </div>
-            </div>
+          <div style={{...s.card, textAlign: 'center'}}>
+            <h2>@{myNick}</h2>
+            <button style={{...s.btn, background: 'red', color: '#fff', width: '100%', marginTop: '20px'}} onClick={() => setUser(null)}>Выйти</button>
           </div>
         )}
       </main>
     </div>
   )
-} 
+}
