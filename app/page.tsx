@@ -10,6 +10,7 @@ const supabase = createClient(
 export default function Home() {
   const [user, setUser] = useState<any>(null)
   const [view, setView] = useState<'feed' | 'chat' | 'profile' | 'people' | 'music' | 'friends' | 'notifs'>('feed')
+  const [isSignUp, setIsSignUp] = useState(false) // Для переключения вход/регистрация
   const [loading, setLoading] = useState(false)
   
   const [posts, setPosts] = useState<any[]>([])
@@ -62,7 +63,28 @@ export default function Home() {
     if (audioRef.current) audioRef.current.volume = volume
   }, [volume])
 
-  // --- ЛОГИКА ---
+  // --- СИСТЕМА ВХОДА И РЕГИСТРАЦИИ ---
+  async function handleAuth() {
+    setLoading(true)
+    const email = `${username.trim()}@app.com`
+    if (isSignUp) {
+      const { data, error } = await supabase.auth.signUp({ email, password })
+      if (error) alert(error.message)
+      else {
+        // Создаем профиль сразу после регистрации
+        await supabase.from('profiles').insert([{ id: data.user?.id, username: username.trim() }])
+        alert('Регистрация успешна! Теперь войдите.')
+        setIsSignUp(false)
+      }
+    } else {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) alert(error.message)
+      else setUser(data.user)
+    }
+    setLoading(false)
+  }
+
+  // --- ОСТАЛЬНАЯ ЛОГИКА ---
   async function loadProfile(uid: string) {
     const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
     if (data) { setMyBio(data.bio || ''); setMyAvatar(data.avatar_url || '') }
@@ -95,6 +117,28 @@ export default function Home() {
     setPostText(''); setFile(null); loadPosts(); setLoading(false)
   }
 
+  async function startRecording(type: 'audio' | 'video') {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' })
+        const recorder = new MediaRecorder(stream)
+        mediaRecorder.current = recorder
+        const chunks: any[] = []
+        recorder.ondataavailable = (e) => chunks.push(e.data)
+        recorder.onstop = async () => {
+            const blob = new Blob(chunks, { type: type === 'audio' ? 'audio/ogg' : 'video/mp4' })
+            const path = `media/${Date.now()}`
+            const { data } = await supabase.storage.from('images').upload(path, blob)
+            if (data) {
+                const url = supabase.storage.from('images').getPublicUrl(path).data.publicUrl
+                await supabase.from('messages').insert([{ sender_name: myNick, receiver_name: chatWith, content: `[${type}]`, media_url: url, media_type: type }])
+                loadMessages()
+            }
+            stream.getTracks().forEach(t => t.stop())
+        }
+        recorder.start(); setIsRecording(true)
+    } catch (e) { alert("Ошибка доступа к камере/микрофону") }
+  }
+
   async function loadMusic() {
     const { data } = await supabase.from('music').select('*').order('created_at', { ascending: false })
     if (data) setSongs(data)
@@ -103,7 +147,7 @@ export default function Home() {
   async function uploadMusic() {
     if (!file || !songTitle) return
     setLoading(true)
-    const path = `music/${Date.now()}_${file.name}`
+    const path = `music/${Date.now()}`
     const { data } = await supabase.storage.from('images').upload(path, file)
     if (data) {
       const url = supabase.storage.from('images').getPublicUrl(path).data.publicUrl
@@ -111,32 +155,6 @@ export default function Home() {
       setSongTitle(''); setFile(null); loadMusic()
     }
     setLoading(false)
-  }
-
-  async function startRecording(type: 'audio' | 'video') {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' })
-    const recorder = new MediaRecorder(stream)
-    mediaRecorder.current = recorder
-    const chunks: any[] = []
-    recorder.ondataavailable = (e) => chunks.push(e.data)
-    recorder.onstop = async () => {
-      const blob = new Blob(chunks, { type: type === 'audio' ? 'audio/ogg' : 'video/mp4' })
-      const path = `${type === 'audio' ? 'voice' : 'video'}/${Date.now()}`
-      const { data } = await supabase.storage.from('images').upload(path, blob)
-      if (data) {
-        const url = supabase.storage.from('images').getPublicUrl(path).data.publicUrl
-        await supabase.from('messages').insert([{ sender_name: myNick, receiver_name: chatWith, content: `[${type}]`, media_url: url, media_type: type }])
-        loadMessages()
-      }
-      stream.getTracks().forEach(t => t.stop())
-    }
-    recorder.start(); setIsRecording(true)
-  }
-
-  async function addFriend(friend: any) {
-    await supabase.from('friends').insert([{ user_id: user.id, friend_id: friend.id }])
-    await supabase.from('notifications').insert([{ receiver_id: friend.id, content: `@${myNick} добавил вас в друзья` }])
-    alert("Добавлен!")
   }
 
   async function loadFriends() {
@@ -176,22 +194,22 @@ export default function Home() {
     card: { background: '#161616', border: '1px solid #262626', borderRadius: '16px', padding: '15px', marginBottom: '15px' },
     input: { width: '100%', padding: '12px', background: '#000', border: '1px solid #262626', borderRadius: '10px', color: '#fff' },
     btn: { background: '#fff', color: '#000', border: 'none', borderRadius: '10px', padding: '8px 12px', fontWeight: 'bold' as any, cursor: 'pointer' },
-    nav: { borderBottom: '1px solid #262626', padding: '15px', display: 'flex', justifyContent: 'space-between', position: 'sticky' as any, top: 0, background: '#0a0a0a', zIndex: 100 },
-    ava: { width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' as any }
+    nav: { borderBottom: '1px solid #262626', padding: '15px', display: 'flex', justifyContent: 'space-between', position: 'sticky' as any, top: 0, background: '#0a0a0a', zIndex: 100 }
   }
 
   if (!user) return (
     <div style={{...s.bg, display:'flex', alignItems:'center', justifyContent:'center'}}>
-      <div style={s.card}>
-        <h2>#HASHTAG</h2>
-        <input placeholder="Ник" style={s.input} onChange={e => setUsername(e.target.value)} />
+      <div style={{...s.card, width:'300px', textAlign:'center'}}>
+        <h2 style={{letterSpacing:'2px'}}>#HASHTAG</h2>
+        <p style={{color:'#888', fontSize:'12px', marginBottom:'15px'}}>{isSignUp ? 'Регистрация аккаунта' : 'Вход в систему'}</p>
+        <input placeholder="Никнейм" style={s.input} onChange={e => setUsername(e.target.value)} />
         <input type="password" placeholder="Пароль" style={{...s.input, marginTop:'10px'}} onChange={e => setPassword(e.target.value)} />
-        <button onClick={() => {
-          const email = `${username}@app.com`
-          supabase.auth.signInWithPassword({ email, password }).then(({data, error}) => {
-            if (error) alert(error.message); else setUser(data.user)
-          })
-        }} style={{...s.btn, width:'100%', marginTop:'20px'}}>Войти</button>
+        <button onClick={handleAuth} disabled={loading} style={{...s.btn, width:'100%', marginTop:'20px'}}>
+            {loading ? 'Загрузка...' : (isSignUp ? 'Создать аккаунт' : 'Войти')}
+        </button>
+        <p onClick={() => setIsSignUp(!isSignUp)} style={{fontSize:'12px', marginTop:'15px', color:'#3b82f6', cursor:'pointer'}}>
+            {isSignUp ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться'}
+        </p>
       </div>
     </div>
   )
@@ -212,15 +230,15 @@ export default function Home() {
         </div>
       </nav>
 
-      <div style={{ maxWidth: '500px', margin: '20px auto', padding: '0 10px' }}>
+      <div style={{ maxWidth: '500px', margin: '20px auto', padding: '0 10px 100px' }}>
         
         {view === 'feed' && (
           <>
             <div style={s.card}>
-              <textarea placeholder="Что нового?" style={{...s.input, border:'none', background:'transparent', resize:'none' as any}} value={postText} onChange={e => setPostText(e.target.value)} />
+              <textarea placeholder="Поделитесь чем-нибудь..." style={{...s.input, border:'none', background:'transparent', resize:'none' as any}} value={postText} onChange={e => setPostText(e.target.value)} />
               <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:'10px'}}>
                 <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} style={{fontSize:'12px'}} />
-                <button onClick={createPost} disabled={loading} style={s.btn}>Пост</button>
+                <button onClick={createPost} disabled={loading} style={s.btn}>Опубликовать</button>
               </div>
             </div>
             {posts.map(p => (
@@ -234,12 +252,41 @@ export default function Home() {
           </>
         )}
 
+        {view === 'chat' && (
+          <div style={{...s.card, height:'75vh', display:'flex', flexDirection:'column'}}>
+            <div style={{borderBottom:'1px solid #262626', paddingBottom:'10px', marginBottom:'10px'}}>Чат с <b>@{chatWith}</b></div>
+            <div style={{flex:1, overflowY:'auto'}}>
+              {messages.map(m => (
+                <div key={m.id} style={{textAlign: m.sender_name === myNick ? 'right' : 'left', margin:'10px 0'}}>
+                  <div style={{display:'inline-block', background: m.sender_name === myNick ? '#3b82f6' : '#262626', padding:'8px 12px', borderRadius:'12px', maxWidth:'80%'}}>
+                    {m.media_type === 'audio' && <audio src={m.media_url} controls style={{height:'35px', width:'200px'}} />}
+                    {m.media_type === 'video' && <video src={m.media_url} controls style={{width:'180px', height:'180px', borderRadius:'50%', objectFit:'cover'}} />}
+                    {!m.media_type && m.content}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{display:'flex', gap:'5px', marginTop:'10px'}}>
+              <input style={s.input} value={msgText} onChange={e => setMsgText(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendMsg()} placeholder="Сообщение..." />
+              {!isRecording ? (
+                <>
+                  <button onClick={() => startRecording('audio')} style={s.btn}>🎤</button>
+                  <button onClick={() => startRecording('video')} style={s.btn}>🎥</button>
+                  <button onClick={sendMsg} style={s.btn}>→</button>
+                </>
+              ) : (
+                <button onClick={() => {mediaRecorder.current?.stop(); setIsRecording(false)}} style={{...s.btn, background:'red', color:'#fff'}}>⏹</button>
+              )}
+            </div>
+          </div>
+        )}
+
         {view === 'music' && (
           <>
             <div style={s.card}>
-              <input placeholder="Название..." style={s.input} value={songTitle} onChange={e => setSongTitle(e.target.value)} />
+              <input placeholder="Название трека" style={s.input} value={songTitle} onChange={e => setSongTitle(e.target.value)} />
               <input type="file" accept="audio/*" onChange={e => setFile(e.target.files?.[0] || null)} style={{marginTop:'10px'}} />
-              <button onClick={uploadMusic} disabled={loading} style={{...s.btn, width:'100%', marginTop:'10px'}}>Загрузить MP3</button>
+              <button onClick={uploadMusic} disabled={loading} style={{...s.btn, width:'100%', marginTop:'10px'}}>Загрузить музыку</button>
             </div>
             {songs.map(sng => (
               <div key={sng.id} style={{...s.card, border: playingId === sng.id ? '1px solid #3b82f6' : '1px solid #262626'}}>
@@ -262,71 +309,29 @@ export default function Home() {
         )}
 
         {view === 'people' && (
-          <>
-            <input placeholder="Поиск людей..." style={{...s.input, marginBottom:'15px'}} onChange={e => setUserSearch(e.target.value)} />
-            {allUsers.map(u => (
-              <div key={u.id} style={{...s.card, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-                  <img src={u.avatar_url || 'https://via.placeholder.com/40'} style={s.ava} />
-                  <b>@{u.username}</b>
-                </div>
-                <div style={{display:'flex', gap:'5px'}}>
-                  <button onClick={() => {setChatWith(u.username); setView('chat')}} style={s.btn}>Чат</button>
-                  <button onClick={() => addFriend(u)} style={{...s.btn, background:'#3b82f6', color:'#fff'}}>+</button>
-                </div>
+          allUsers.map(u => (
+            <div key={u.id} style={{...s.card, display:'flex', justifyContent:'space-between', alignItems: 'center'}}>
+              <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+                <img src={u.avatar_url || 'https://via.placeholder.com/40'} style={{width:'40px', height:'40px', borderRadius:'50%'}} />
+                <b>@{u.username}</b>
               </div>
-            ))}
-          </>
+              <div style={{display:'flex', gap:'5px'}}>
+                <button onClick={() => {setChatWith(u.username); setView('chat')}} style={s.btn}>Чат</button>
+                <button onClick={() => {}} style={{...s.btn, background:'#3b82f6', color:'#fff'}}>+</button>
+              </div>
+            </div>
+          ))
         )}
 
-        {view === 'friends' && friends.map(u => (
-          <div key={u.id} style={{...s.card, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-            <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-              <img src={u.avatar_url || 'https://via.placeholder.com/40'} style={s.ava} />
-              <b>@{u.username}</b>
-            </div>
-            <button onClick={() => {setChatWith(u.username); setView('chat')}} style={s.btn}>Чат</button>
-          </div>
-        ))}
-
         {view === 'notifs' && notifications.map(n => (
-          <div key={n.id} style={s.card}>{n.content} <small style={{display:'block', color:'#555'}}>{new Date(n.created_at).toLocaleString()}</small></div>
+          <div key={n.id} style={s.card}>{n.content}</div>
         ))}
 
         {view === 'profile' && (
           <div style={{...s.card, textAlign:'center'}}>
             <img src={myAvatar || 'https://via.placeholder.com/80'} style={{width:'80px', height:'80px', borderRadius:'50%', marginBottom:'10px'}} />
             <h3>@{myNick}</h3>
-            <p style={{color:'#888'}}>{myBio || 'Нет описания'}</p>
             <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{...s.btn, background:'red', color:'#fff', width:'100%', marginTop:'20px'}}>Выйти</button>
-          </div>
-        )}
-
-        {view === 'chat' && (
-          <div style={{...s.card, height:'75vh', display:'flex', flexDirection:'column'}}>
-            <div style={{flex:1, overflowY:'auto', paddingBottom:'10px'}}>
-              {messages.map(m => (
-                <div key={m.id} style={{textAlign: m.sender_name === myNick ? 'right' : 'left', margin:'10px 0'}}>
-                  <div style={{display:'inline-block', background: m.sender_name === myNick ? '#3b82f6' : '#262626', padding:'8px 12px', borderRadius:'12px', maxWidth:'80%'}}>
-                    {m.media_type === 'audio' && <audio src={m.media_url} controls style={{height:'30px', width:'200px'}} />}
-                    {m.media_type === 'video' && <video src={m.media_url} controls style={{width:'200px', borderRadius:'50%'}} />}
-                    {!m.media_type && m.content}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div style={{display:'flex', gap:'5px'}}>
-              <input style={s.input} value={msgText} onChange={e => setMsgText(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendMsg()} placeholder="Сообщение..." />
-              {!isRecording ? (
-                <>
-                  <button onClick={() => startRecording('audio')} style={s.btn}>🎤</button>
-                  <button onClick={() => startRecording('video')} style={s.btn}>🎥</button>
-                  <button onClick={sendMsg} style={s.btn}>→</button>
-                </>
-              ) : (
-                <button onClick={() => {mediaRecorder.current?.stop(); setIsRecording(false)}} style={{...s.btn, background:'red', color:'#fff'}}>⏹</button>
-              )}
-            </div>
           </div>
         )}
 
