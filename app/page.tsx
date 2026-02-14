@@ -77,21 +77,22 @@ export default function Home() {
     setMsgText(''); loadMessages();
   }
 
-  // --- СТИЛИ VERCEL ---
-  const containerStyle = { background: '#000', minHeight: '100vh', color: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }
+  const containerStyle = { background: '#000', minHeight: '100vh', color: '#fff', fontFamily: '-apple-system, sans-serif' }
   const cardStyle = { background: '#111', border: '1px solid #333', borderRadius: '12px', padding: '24px' }
-  const inputStyle = { width: '100%', padding: '12px', background: '#000', border: '1px solid #333', borderRadius: '8px', color: '#fff', fontSize: '14px', marginBottom: '12px', outline: 'none' }
-  const btnPrimary = { background: '#fff', color: '#000', border: 'none', borderRadius: '8px', padding: '12px 24px', fontWeight: '600', cursor: 'pointer', transition: '0.2s' }
+  const inputStyle = { width: '100%', padding: '12px', background: '#000', border: '1px solid #333', borderRadius: '8px', color: '#fff', outline: 'none' }
+  const btnPrimary = { background: '#fff', color: '#000', border: 'none', borderRadius: '8px', padding: '12px 24px', fontWeight: '600', cursor: 'pointer' }
 
   if (!user) {
     return (
       <div style={{ ...containerStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ ...cardStyle, width: '350px', textAlign: 'center' }}>
-          <h1 style={{ fontSize: '32px', fontWeight: '800', marginBottom: '24px', letterSpacing: '-1px' }}>#HASHTAG</h1>
+          <h1 style={{ fontSize: '32px', marginBottom: '24px' }}>#HASHTAG</h1>
           <input placeholder="Email" style={inputStyle} value={email} onChange={e => setEmail(e.target.value)} />
+          <div style={{ height: '10px' }} />
           <input type="password" placeholder="Пароль" style={inputStyle} value={password} onChange={e => setPassword(e.target.value)} />
+          <div style={{ height: '20px' }} />
           <button onClick={() => handleAuth('login')} style={{ ...btnPrimary, width: '100%', marginBottom: '12px' }}>Войти</button>
-          <button onClick={() => handleAuth('signup')} style={{ background: 'transparent', color: '#888', border: 'none', cursor: 'pointer', fontSize: '14px' }}>Создать аккаунт</button>
+          <button onClick={() => handleAuth('signup')} style={{ background: 'transparent', color: '#888', border: 'none', cursor: 'pointer' }}>Создать аккаунт</button>
         </div>
       </div>
     )
@@ -99,12 +100,12 @@ export default function Home() {
 
   return (
     <div style={containerStyle}>
-      <nav style={{ borderBottom: '1px solid #333', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', sticky: 'top', background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)' }}>
-        <h2 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>#HASHTAG</h2>
+      <nav style={{ borderBottom: '1px solid #333', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2 style={{ margin: 0 }}>#HASHTAG</h2>
         <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
           <span onClick={() => {setView('feed'); loadPosts()}} style={{ cursor: 'pointer', color: view==='feed'?'#fff':'#888' }}>Лента</span>
           <span onClick={() => {setView('chat'); loadMessages()}} style={{ cursor: 'pointer', color: view==='chat'?'#fff':'#888' }}>Чаты</span>
-          <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{ background: '#333', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}>Выйти</button>
+          <button onClick={() => supabase.auth.signOut().then(() => setUser(null))} style={{ background: '#333', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer' }}>Выйти</button>
         </div>
       </nav>
 
@@ -112,28 +113,27 @@ export default function Home() {
         {view === 'feed' ? (
           <>
             <div style={{ ...cardStyle, marginBottom: '24px' }}>
-              <textarea placeholder="Что нового?" style={{ ...inputStyle, height: '100px', resize: 'none', border: 'none', padding: '0' }} value={postText} onChange={e => setPostText(e.target.value)} />
+              <textarea placeholder="Что нового?" style={{ ...inputStyle, height: '100px', resize: 'none', border: 'none' }} value={postText} onChange={e => setPostText(e.target.value)} />
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '16px', borderTop: '1px solid #333' }}>
-                <label style={{ cursor: 'pointer', color: '#888', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <label style={{ cursor: 'pointer', color: '#888', fontSize: '14px' }}>
                   <input type="file" accept="image/*" onChange={e => setFile(e.target.files?.[0] || null)} style={{ display: 'none' }} />
-                  🖼️ {file ? file.name.substring(0, 15) + '...' : 'Добавить фото'}
+                  🖼️ {file ? file.name : 'Добавить фото'}
                 </label>
-                <button onClick={createPost} disabled={loading} style={{ ...btnPrimary, padding: '8px 16px', fontSize: '14px' }}>{loading ? '...' : 'Опубликовать'}</button>
+                <button onClick={createPost} disabled={loading} style={{ ...btnPrimary, padding: '8px 16px' }}>Опубликовать</button>
               </div>
             </div>
-
             {posts.map(post => (
               <div key={post.id} style={{ ...cardStyle, marginBottom: '16px' }}>
                 <div style={{ fontSize: '12px', color: '#888', marginBottom: '12px' }}>{post.author_email}</div>
-                {post.text && <p style={{ fontSize: '16px', lineHeight: '1.6', margin: '0 0 16px 0' }}>{post.text}</p>}
-                {post.image_url && <img src={post.image_url} style={{ width: '100%', borderRadius: '8px', border: '1px solid #333' }} />}
+                <p style={{ margin: '0 0 16px 0' }}>{post.text}</p>
+                {post.image_url && <img src={post.image_url} style={{ width: '100%', borderRadius: '8px' }} />}
               </div>
             ))}
           </>
         ) : (
           <div style={{ ...cardStyle, height: '70vh', display: 'flex', flexDirection: 'column', padding: '0' }}>
             <div style={{ padding: '16px', borderBottom: '1px solid #333' }}>
-              <input placeholder="Email собеседника" style={{ ...inputStyle, marginBottom: 0 }} value={chatWith} onChange={e => setChatWith(e.target.value)} />
+              <input placeholder="Email собеседника" style={inputStyle} value={chatWith} onChange={e => setChatWith(e.target.value)} />
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {messages.filter(m => m.sender_email === chatWith || m.receiver_email === chatWith).map(m => (
@@ -141,14 +141,14 @@ export default function Home() {
                   alignSelf: m.sender_email === user.email ? 'flex-end' : 'flex-start',
                   background: m.sender_email === user.email ? '#fff' : '#333',
                   color: m.sender_email === user.email ? '#000' : '#fff',
-                  padding: '10px 16px', borderRadius: '18px', maxWidth: '80%', fontSize: '14px'
+                  padding: '10px 16px', borderRadius: '18px', maxWidth: '80%'
                 }}>
                   {m.content}
                 </div>
               ))}
             </div>
             <div style={{ padding: '16px', borderTop: '1px solid #333', display: 'flex', gap: '12px' }}>
-              <input placeholder="Напишите сообщение..." style={{ ...inputStyle, marginBottom: 0 }} value={msgText} onChange={e => setMsgText(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendMsg()} />
+              <input placeholder="Напишите сообщение..." style={inputStyle} value={msgText} onChange={e => setMsgText(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendMsg()} />
               <button onClick={sendMsg} style={{ ...btnPrimary, padding: '0 20px' }}>→</button>
             </div>
           </div>
