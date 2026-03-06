@@ -7,6 +7,11 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+// Email генерируется автоматически из логина: username@hashtag.app
+function toEmail(username: string) {
+  return `${username.toLowerCase().trim()}@hashtag.app`
+}
+
 type View = 'feed' | 'music' | 'profile' | 'messages' | 'notifications' | 'saved' | 'search'
 type Post = {
   id: string; text: string; image_url: string; username: string
@@ -24,7 +29,7 @@ type Story = { id: string; user_id: string; username: string; avatar_url: string
 export default function Home() {
   const [user, setUser] = useState<any>(null)
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [authError, setAuthError] = useState('')
   const [view, setView] = useState<View>('feed')
@@ -43,7 +48,6 @@ export default function Home() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [stories, setStories] = useState<Story[]>([])
-  const [storyFile, setStoryFile] = useState<File | null>(null)
   const [activeStory, setActiveStory] = useState<Story | null>(null)
   const [savedPosts, setSavedPosts] = useState<Post[]>([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -65,19 +69,38 @@ export default function Home() {
 
   async function handleAuth() {
     setAuthError('')
-    if (authMode === 'login') {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) setAuthError(error.message)
+    const trimmed = username.toLowerCase().trim()
+    if (!trimmed || !password) { setAuthError('Введи логин и пароль'); return }
+    if (password.length < 6) { setAuthError('Пароль минимум 6 символов'); return }
+
+    const fakeEmail = toEmail(trimmed)
+
+    if (authMode === 'register') {
+      // Проверяем не занят ли логин
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', trimmed)
+        .single()
+      if (existing) { setAuthError('Этот логин уже занят'); return }
+
+      const { data, error } = await supabase.auth.signUp({ email: fakeEmail, password })
+      if (error) { setAuthError('Ошибка регистрации: ' + error.message); return }
+      if (data.user) {
+        await supabase.from('profiles').upsert({ id: data.user.id, username: trimmed, avatar_url: '', bio: '' })
+        setProfile({ username: trimmed, avatar_url: '', bio: '' })
+      }
     } else {
-      const { error } = await supabase.auth.signUp({ email, password })
-      if (error) setAuthError(error.message)
-      else setAuthError('Проверь почту для подтверждения!')
+      const { error } = await supabase.auth.signInWithPassword({ email: fakeEmail, password })
+      if (error) { setAuthError('Неверный логин или пароль'); return }
     }
   }
 
   async function handleLogout() {
     await supabase.auth.signOut()
     setUser(null)
+    setUsername('')
+    setPassword('')
   }
 
   // ─── PROFILE ─────────────────────────────────────────
@@ -133,21 +156,14 @@ export default function Home() {
   }
 
   async function loadNotifications() {
-    const { data } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
+    const { data } = await supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
     setNotifications(data || [])
     setUnreadCount(0)
     await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id).eq('is_read', false)
   }
 
   async function loadSavedPosts() {
-    const { data } = await supabase
-      .from('saved_posts')
-      .select('post_id, posts(*, comments(*), post_likes(user_id))')
-      .eq('user_id', user.id)
+    const { data } = await supabase.from('saved_posts').select('post_id, posts(*, comments(*), post_likes(user_id))').eq('user_id', user.id)
     setSavedPosts((data || []).map((s: any) => s.posts).filter(Boolean))
   }
 
@@ -169,10 +185,8 @@ export default function Home() {
   // ─── REALTIME NOTIFICATIONS ──────────────────────────
   useEffect(() => {
     if (!user) return
-    const channel = supabase
-      .channel('notifs')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
-        () => setUnreadCount(n => n + 1))
+    const channel = supabase.channel('notifs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => setUnreadCount(n => n + 1))
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [user])
@@ -187,7 +201,7 @@ export default function Home() {
       await supabase.storage.from('images').upload(name, selectedFile)
       imageUrl = supabase.storage.from('images').getPublicUrl(name).data.publicUrl
     }
-    await supabase.from('posts').insert([{ text: postText, image_url: imageUrl, username: profile.username || user.email?.split('@')[0], user_id: user.id }])
+    await supabase.from('posts').insert([{ text: postText, image_url: imageUrl, username: profile.username, user_id: user.id }])
     setPostText(''); setSelectedFile(null); setUploading(false); loadFeed()
   }
 
@@ -199,20 +213,15 @@ export default function Home() {
     } else {
       await supabase.from('post_likes').insert([{ post_id: post.id, user_id: user.id }])
       await supabase.from('posts').update({ likes_count: (post.likes_count || 0) + 1 }).eq('id', post.id)
-      if (post.user_id !== user.id) {
-        await supabase.from('notifications').insert([{ user_id: post.user_id, from_user_id: user.id, from_username: profile.username, type: 'like', post_id: post.id, message: `${profile.username} лайкнул твой пост` }])
-      }
+      if (post.user_id !== user.id) await supabase.from('notifications').insert([{ user_id: post.user_id, from_user_id: user.id, from_username: profile.username, type: 'like', post_id: post.id, message: `${profile.username} лайкнул твой пост` }])
     }
     loadFeed()
   }
 
   async function handleSave(post: Post) {
     const saved = post.saved_posts?.some(s => s.user_id === user.id)
-    if (saved) {
-      await supabase.from('saved_posts').delete().match({ post_id: post.id, user_id: user.id })
-    } else {
-      await supabase.from('saved_posts').insert([{ post_id: post.id, user_id: user.id }])
-    }
+    if (saved) await supabase.from('saved_posts').delete().match({ post_id: post.id, user_id: user.id })
+    else await supabase.from('saved_posts').insert([{ post_id: post.id, user_id: user.id }])
     loadFeed()
   }
 
@@ -220,10 +229,8 @@ export default function Home() {
     const text = commentInputs[postId]
     if (!text?.trim()) return
     const post = posts.find(p => p.id === postId)
-    await supabase.from('comments').insert([{ post_id: postId, text, username: profile.username || 'User', user_id: user.id }])
-    if (post && post.user_id !== user.id) {
-      await supabase.from('notifications').insert([{ user_id: post.user_id, from_user_id: user.id, from_username: profile.username, type: 'comment', post_id: postId, message: `${profile.username} прокомментировал твой пост` }])
-    }
+    await supabase.from('comments').insert([{ post_id: postId, text, username: profile.username, user_id: user.id }])
+    if (post && post.user_id !== user.id) await supabase.from('notifications').insert([{ user_id: post.user_id, from_user_id: user.id, from_username: profile.username, type: 'comment', post_id: postId, message: `${profile.username} прокомментировал твой пост` }])
     setCommentInputs(c => ({ ...c, [postId]: '' })); loadFeed()
   }
 
@@ -235,7 +242,6 @@ export default function Home() {
     loadFeed()
   }
 
-  // ─── FOLLOW ──────────────────────────────────────────
   async function handleFollow(targetId: string, targetUsername: string) {
     const isFollowing = followingIds.includes(targetId)
     if (isFollowing) {
@@ -248,7 +254,6 @@ export default function Home() {
     }
   }
 
-  // ─── STORIES ─────────────────────────────────────────
   async function uploadStory(file: File) {
     const name = `stories/${user.id}_${Date.now()}`
     await supabase.storage.from('images').upload(name, file)
@@ -257,14 +262,12 @@ export default function Home() {
     loadStories()
   }
 
-  // ─── MESSAGES ────────────────────────────────────────
   async function sendMessage() {
     if (!msgText.trim() || !activeChat) return
-    await supabase.from('messages').insert([{ text: msgText, from_id: user.id, to_id: activeChat.id, from_username: profile.username || user.email?.split('@')[0] }])
+    await supabase.from('messages').insert([{ text: msgText, from_id: user.id, to_id: activeChat.id, from_username: profile.username }])
     setMsgText(''); loadMessages(activeChat.id)
   }
 
-  // ─── SEARCH ──────────────────────────────────────────
   async function handleSearch(q: string) {
     setSearchQuery(q)
     if (!q.trim()) { setSearchResults({ posts: [], users: [] }); return }
@@ -275,15 +278,13 @@ export default function Home() {
     setSearchResults({ posts: (foundPosts as Post[]) || [], users: (foundUsers as Profile[]) || [] })
   }
 
-  // ─── UTILS ───────────────────────────────────────────
   function formatTime(iso: string) { return new Date(iso).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }) }
   function formatDate(iso: string) { return new Date(iso).toLocaleDateString('ru', { day: 'numeric', month: 'short' }) }
-  function getAvatar(username: string, avatar_url?: string) {
+  function getAvatar(uname: string, avatar_url?: string) {
     if (avatar_url) return <img src={avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-    return (username?.[0] || '?').toUpperCase()
+    return (uname?.[0] || '?').toUpperCase()
   }
 
-  // ─── POST CARD COMPONENT ─────────────────────────────
   function PostCard({ post }: { post: Post }) {
     const liked = post.post_likes?.some(l => l.user_id === user.id)
     const isSaved = post.saved_posts?.some(s => s.user_id === user.id)
@@ -305,9 +306,7 @@ export default function Home() {
               <div style={{ color: '#708499', fontSize: '12px' }}>{formatDate(post.created_at)}</div>
             </div>
           </div>
-          {post.user_id === user.id && (
-            <button onClick={() => deletePost(post.id)} style={{ background: 'none', border: 'none', color: '#708499', cursor: 'pointer', fontSize: '18px' }}>🗑</button>
-          )}
+          {post.user_id === user.id && <button onClick={() => deletePost(post.id)} style={{ background: 'none', border: 'none', color: '#708499', cursor: 'pointer', fontSize: '18px' }}>🗑</button>}
         </div>
         {post.text && <p style={{ fontSize: '15px', lineHeight: '1.5', marginBottom: '12px', color: '#e8f0f7' }}>{post.text}</p>}
         {post.image_url && <img src={post.image_url} style={{ width: '100%', borderRadius: '12px', marginBottom: '12px', maxHeight: '400px', objectFit: 'cover' }} />}
@@ -344,10 +343,33 @@ export default function Home() {
           <h1 style={{ color: '#fff', fontSize: '24px', fontWeight: '700', margin: 0 }}>Hashtag</h1>
           <p style={{ color: '#708499', fontSize: '14px', marginTop: '6px' }}>{authMode === 'login' ? 'Войди в свой аккаунт' : 'Создай аккаунт'}</p>
         </div>
-        <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} />
-        <input type="password" placeholder="Пароль" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAuth()} style={{ ...inputStyle, marginBottom: '20px' }} />
-        {authError && <p style={{ color: authError.includes('почту') ? '#4ade80' : '#f87171', fontSize: '13px', marginBottom: '12px', textAlign: 'center' }}>{authError}</p>}
-        <button onClick={handleAuth} style={primaryBtnStyle}>{authMode === 'login' ? 'Войти' : 'Зарегистрироваться'}</button>
+
+        <label style={labelStyle}>Логин</label>
+        <input
+          placeholder="например: durov"
+          value={username}
+          onChange={e => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
+          style={inputStyle}
+          autoCapitalize="none"
+          autoCorrect="off"
+        />
+
+        <label style={labelStyle}>Пароль</label>
+        <input
+          type="password"
+          placeholder="минимум 6 символов"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleAuth()}
+          style={{ ...inputStyle, marginBottom: '20px' }}
+        />
+
+        {authError && <p style={{ color: authError.includes('подтвер') ? '#4ade80' : '#f87171', fontSize: '13px', marginBottom: '12px', textAlign: 'center' }}>{authError}</p>}
+
+        <button onClick={handleAuth} style={primaryBtnStyle}>
+          {authMode === 'login' ? 'Войти' : 'Зарегистрироваться'}
+        </button>
+
         <p style={{ color: '#708499', textAlign: 'center', fontSize: '14px', marginTop: '16px' }}>
           {authMode === 'login' ? 'Нет аккаунта?' : 'Уже есть аккаунт?'}{' '}
           <span onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setAuthError('') }} style={{ color: '#2ea6ff', cursor: 'pointer' }}>
@@ -362,13 +384,11 @@ export default function Home() {
   return (
     <div style={{ minHeight: '100vh', background: '#0e1621', fontFamily: "'SF Pro Display', -apple-system, sans-serif", color: '#fff' }}>
 
-      {/* Story viewer overlay */}
       {activeStory && (
         <div onClick={() => setActiveStory(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.95)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ position: 'absolute', top: '20px', left: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={avatarSmall}>{getAvatar(activeStory.username, activeStory.avatar_url)}</div>
             <span style={{ fontWeight: '600' }}>@{activeStory.username}</span>
-            <span style={{ color: '#708499', fontSize: '13px' }}>{formatDate(activeStory.created_at)}</span>
           </div>
           <button onClick={() => setActiveStory(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'none', border: 'none', color: '#fff', fontSize: '28px', cursor: 'pointer' }}>✕</button>
           <img src={activeStory.image_url} style={{ maxHeight: '85vh', maxWidth: '500px', borderRadius: '16px', objectFit: 'contain' }} />
@@ -382,7 +402,7 @@ export default function Home() {
             {getAvatar(profile.username, profile.avatar_url)}
           </div>
           <div style={{ overflow: 'hidden' }}>
-            <div style={{ fontWeight: '600', fontSize: '15px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.username || user.email?.split('@')[0]}</div>
+            <div style={{ fontWeight: '600', fontSize: '15px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>@{profile.username}</div>
             <div style={{ color: '#4ade80', fontSize: '12px' }}>● онлайн</div>
           </div>
         </div>
@@ -408,13 +428,11 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Main content */}
       <div style={{ marginLeft: '240px', minHeight: '100vh' }}>
 
         {/* ── FEED ── */}
         {view === 'feed' && (
           <div style={{ maxWidth: '600px', margin: '0 auto', padding: '24px 16px' }}>
-            {/* Stories row */}
             <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', overflowX: 'auto', paddingBottom: '8px' }}>
               <div style={{ flexShrink: 0, textAlign: 'center' }}>
                 <label style={{ cursor: 'pointer' }}>
@@ -433,7 +451,6 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Post composer */}
             <div style={cardStyle}>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
                 <div style={avatarSmall}>{getAvatar(profile.username, profile.avatar_url)}</div>
@@ -448,7 +465,6 @@ export default function Home() {
                 <button onClick={handlePublish} disabled={uploading} style={{ ...primaryBtnStyle, padding: '8px 20px', width: 'auto' }}>{uploading ? '...' : 'Опубликовать'}</button>
               </div>
             </div>
-
             {posts.map(post => <PostCard key={post.id} post={post} />)}
           </div>
         )}
@@ -463,10 +479,7 @@ export default function Home() {
                 {searchResults.users.map(u => (
                   <div key={u.id} style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={avatarSmall}>{getAvatar(u.username, u.avatar_url)}</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: '600' }}>@{u.username}</div>
-                      <div style={{ color: '#708499', fontSize: '13px' }}>{u.bio || 'нет статуса'}</div>
-                    </div>
+                    <div style={{ flex: 1 }}><div style={{ fontWeight: '600' }}>@{u.username}</div><div style={{ color: '#708499', fontSize: '13px' }}>{u.bio || 'нет статуса'}</div></div>
                     {u.id !== user.id && (
                       <button onClick={() => handleFollow(u.id!, u.username)} style={{ background: followingIds.includes(u.id!) ? 'rgba(46,166,255,0.15)' : '#2ea6ff', color: '#fff', border: 'none', borderRadius: '20px', padding: '6px 16px', fontSize: '13px', cursor: 'pointer', fontWeight: '600' }}>
                         {followingIds.includes(u.id!) ? '✓ Подписан' : '+ Подписаться'}
@@ -496,10 +509,7 @@ export default function Home() {
             {notifications.map(n => (
               <div key={n.id} style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: '12px', opacity: n.is_read ? 0.6 : 1, borderLeft: n.is_read ? '3px solid transparent' : '3px solid #2ea6ff' }}>
                 <span style={{ fontSize: '24px' }}>{n.type === 'like' ? '❤️' : n.type === 'comment' ? '💬' : '👤'}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '14px' }}>{n.message}</div>
-                  <div style={{ color: '#708499', fontSize: '12px', marginTop: '4px' }}>{formatDate(n.created_at)}</div>
-                </div>
+                <div style={{ flex: 1 }}><div style={{ fontSize: '14px' }}>{n.message}</div><div style={{ color: '#708499', fontSize: '12px', marginTop: '4px' }}>{formatDate(n.created_at)}</div></div>
               </div>
             ))}
           </div>
@@ -521,29 +531,29 @@ export default function Home() {
               <div style={{ padding: '16px', borderBottom: '1px solid #1e2d3d' }}><h2 style={{ fontSize: '18px', fontWeight: '700' }}>Сообщения</h2></div>
               {contacts.length === 0 && <p style={{ color: '#708499', padding: '20px', textAlign: 'center', fontSize: '14px' }}>Нет других пользователей</p>}
               {contacts.map(contact => (
-                <div key={contact.id} onClick={() => { setActiveChat(contact); loadMessages(contact.id!) }} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', cursor: 'pointer', background: activeChat?.id === contact.id ? 'rgba(46,166,255,0.1)' : 'transparent', borderLeft: activeChat?.id === contact.id ? '3px solid #2ea6ff' : '3px solid transparent', transition: 'all 0.15s' }}>
+                <div key={contact.id} onClick={() => { setActiveChat(contact); loadMessages(contact.id!) }} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', cursor: 'pointer', background: activeChat?.id === contact.id ? 'rgba(46,166,255,0.1)' : 'transparent', borderLeft: activeChat?.id === contact.id ? '3px solid #2ea6ff' : '3px solid transparent' }}>
                   <div style={{ ...avatarSmall, flexShrink: 0 }}>{getAvatar(contact.username, contact.avatar_url)}</div>
-                  <div><div style={{ fontWeight: '600', fontSize: '14px' }}>{contact.username || 'Пользователь'}</div><div style={{ color: '#708499', fontSize: '12px' }}>{contact.bio || 'нет статуса'}</div></div>
+                  <div><div style={{ fontWeight: '600', fontSize: '14px' }}>@{contact.username}</div><div style={{ color: '#708499', fontSize: '12px' }}>{contact.bio || 'нет статуса'}</div></div>
                 </div>
               ))}
             </div>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
               {!activeChat ? (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#708499' }}>
-                  <div style={{ textAlign: 'center' }}><div style={{ fontSize: '48px', marginBottom: '16px' }}>💬</div><p>Выбери чат, чтобы начать общение</p></div>
+                  <div style={{ textAlign: 'center' }}><div style={{ fontSize: '48px', marginBottom: '16px' }}>💬</div><p>Выбери чат</p></div>
                 </div>
               ) : (
                 <>
                   <div style={{ padding: '16px 20px', borderBottom: '1px solid #1e2d3d', display: 'flex', alignItems: 'center', gap: '12px', background: '#17212b' }}>
                     <div style={avatarSmall}>{getAvatar(activeChat.username, activeChat.avatar_url)}</div>
-                    <div><div style={{ fontWeight: '700', fontSize: '16px' }}>{activeChat.username || 'Пользователь'}</div><div style={{ color: '#4ade80', fontSize: '12px' }}>● онлайн</div></div>
+                    <div><div style={{ fontWeight: '700', fontSize: '16px' }}>@{activeChat.username}</div><div style={{ color: '#4ade80', fontSize: '12px' }}>● онлайн</div></div>
                   </div>
                   <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
                     {messages.map(msg => {
                       const mine = msg.from_id === user.id
                       return (
                         <div key={msg.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', marginBottom: '8px' }}>
-                          <div style={{ maxWidth: '70%', background: mine ? 'linear-gradient(135deg, #2ea6ff, #1a8fd1)' : '#17212b', color: '#fff', borderRadius: mine ? '18px 18px 4px 18px' : '18px 18px 18px 4px', padding: '10px 14px', fontSize: '15px', lineHeight: '1.4', border: mine ? 'none' : '1px solid #2b3d4f' }}>
+                          <div style={{ maxWidth: '70%', background: mine ? 'linear-gradient(135deg, #2ea6ff, #1a8fd1)' : '#17212b', color: '#fff', borderRadius: mine ? '18px 18px 4px 18px' : '18px 18px 18px 4px', padding: '10px 14px', fontSize: '15px', border: mine ? 'none' : '1px solid #2b3d4f' }}>
                             <p style={{ margin: 0 }}>{msg.text}</p>
                             <p style={{ margin: '4px 0 0', fontSize: '11px', opacity: 0.7, textAlign: 'right' }}>{formatTime(msg.created_at)}</p>
                           </div>
@@ -597,12 +607,10 @@ export default function Home() {
                   <input type="file" accept="image/*" onChange={e => e.target.files?.[0] && handleAvatarUpload(e.target.files[0])} style={{ display: 'none' }} />
                 </label>
               </div>
-              <label style={labelStyle}>Имя пользователя</label>
-              <input placeholder="@username" value={profile.username} onChange={e => setProfile(p => ({ ...p, username: e.target.value }))} style={inputStyle} />
+              <label style={labelStyle}>Логин</label>
+              <input value={`@${profile.username}`} disabled style={{ ...inputStyle, opacity: 0.5, cursor: 'not-allowed' }} />
               <label style={labelStyle}>О себе</label>
               <textarea placeholder="Расскажи о себе..." value={profile.bio} onChange={e => setProfile(p => ({ ...p, bio: e.target.value }))} rows={3} style={{ ...inputStyle, resize: 'none', fontFamily: 'inherit' }} />
-              <label style={labelStyle}>Email</label>
-              <input value={user.email} disabled style={{ ...inputStyle, opacity: 0.5, cursor: 'not-allowed' }} />
               <button onClick={saveProfile} style={{ ...primaryBtnStyle, marginTop: '8px' }}>Сохранить</button>
             </div>
           </div>
@@ -612,35 +620,9 @@ export default function Home() {
   )
 }
 
-// ─── SHARED STYLES ────────────────────────────────────
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '12px 14px', background: '#0e1621',
-  border: '1px solid #2b3d4f', color: '#fff', borderRadius: '12px',
-  marginBottom: '12px', fontSize: '15px', outline: 'none',
-  fontFamily: 'inherit', boxSizing: 'border-box'
-}
-const primaryBtnStyle: React.CSSProperties = {
-  width: '100%', padding: '13px',
-  background: 'linear-gradient(135deg, #2ea6ff, #1a8fd1)',
-  color: '#fff', border: 'none', borderRadius: '12px',
-  fontWeight: '700', fontSize: '15px', cursor: 'pointer', fontFamily: 'inherit'
-}
-const cardStyle: React.CSSProperties = {
-  background: '#17212b', borderRadius: '16px',
-  padding: '20px', marginBottom: '12px', border: '1px solid #1e2d3d'
-}
-const avatarSmall: React.CSSProperties = {
-  width: '40px', height: '40px', borderRadius: '50%',
-  background: 'linear-gradient(135deg, #2ea6ff, #1a8fd1)',
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  fontSize: '16px', fontWeight: '700', overflow: 'hidden', flexShrink: 0
-}
-const actionBtn: React.CSSProperties = {
-  background: 'none', border: 'none', cursor: 'pointer',
-  display: 'flex', alignItems: 'center', gap: '6px',
-  fontSize: '14px', padding: '4px 8px', borderRadius: '8px', fontFamily: 'inherit'
-}
-const labelStyle: React.CSSProperties = {
-  display: 'block', color: '#708499', fontSize: '12px',
-  fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px'
-}
+const inputStyle: React.CSSProperties = { width: '100%', padding: '12px 14px', background: '#0e1621', border: '1px solid #2b3d4f', color: '#fff', borderRadius: '12px', marginBottom: '12px', fontSize: '15px', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }
+const primaryBtnStyle: React.CSSProperties = { width: '100%', padding: '13px', background: 'linear-gradient(135deg, #2ea6ff, #1a8fd1)', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '15px', cursor: 'pointer', fontFamily: 'inherit' }
+const cardStyle: React.CSSProperties = { background: '#17212b', borderRadius: '16px', padding: '20px', marginBottom: '12px', border: '1px solid #1e2d3d' }
+const avatarSmall: React.CSSProperties = { width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #2ea6ff, #1a8fd1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: '700', overflow: 'hidden', flexShrink: 0 }
+const actionBtn: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', padding: '4px 8px', borderRadius: '8px', fontFamily: 'inherit' }
+const labelStyle: React.CSSProperties = { display: 'block', color: '#708499', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: '6px' }
