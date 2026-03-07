@@ -1,58 +1,45 @@
+'use client'
+
 import { useState } from "react";
 
-const POSTS = [
+/* ─── DATA ─── */
+const POSTS_DATA = [
   {
     id: 1,
     user: { name: "Алина Ковалёва", handle: "alina_k", avatar: "АК", color: "#5b8dee" },
     time: "2м",
     text: "Закат над городом — лучшее что есть в этом мире 🌇",
-    image: null,
-    likes: 128,
-    comments: 14,
-    reposts: 6,
-    tags: ["фото", "город"],
-    liked: false,
+    likes: 128, comments: 14, reposts: 6,
+    tags: ["фото", "город"], liked: false,
   },
   {
     id: 2,
     user: { name: "Макс Орлов", handle: "max_orl", avatar: "МО", color: "#e05b8d" },
     time: "15м",
-    text: "Только что вышел новый альбом от @midnight_wave — слушаю на повторе уже третий час подряд. Рекомендую всем.",
-    image: null,
-    likes: 84,
-    comments: 32,
-    reposts: 19,
-    tags: ["музыка"],
-    liked: true,
+    text: "Только что вышел новый альбом от @midnight_wave — слушаю на повторе уже третий час. Рекомендую всем 🎵",
+    likes: 84, comments: 32, reposts: 19,
+    tags: ["музыка"], liked: true,
   },
   {
     id: 3,
     user: { name: "Лера Синицина", handle: "lera.s", avatar: "ЛС", color: "#5be0c4" },
     time: "1ч",
     text: "Пишу диплом и параллельно изучаю Rust. Продуктивность = 0. Хаос = 100. Но как-то справляюсь 🤙",
-    image: null,
-    likes: 211,
-    comments: 47,
-    reposts: 23,
-    tags: ["жизнь", "код"],
-    liked: false,
+    likes: 211, comments: 47, reposts: 23,
+    tags: ["жизнь", "код"], liked: false,
   },
   {
     id: 4,
     user: { name: "Иван Дробот", handle: "drobot_iv", avatar: "ИД", color: "#e0b45b" },
     time: "3ч",
-    text: "Опубликовал новую статью про архитектуру микросервисов. Ссылка в профиле. Буду рад фидбеку.",
-    image: null,
-    likes: 56,
-    comments: 8,
-    reposts: 11,
-    tags: ["разработка"],
-    liked: false,
+    text: "Опубликовал новую статью про архитектуру микросервисов. Ссылка в профиле. Буду рад фидбеку 🚀",
+    likes: 56, comments: 8, reposts: 11,
+    tags: ["разработка"], liked: false,
   },
 ];
 
-const STORIES = [
-  { id: 1, name: "Ты", avatar: "Я", color: "#5b8dee", isOwn: true },
+const STORIES_DATA = [
+  { id: 1, name: "Моя", avatar: "+", color: "#5b8dee", isOwn: true },
   { id: 2, name: "alina_k", avatar: "АК", color: "#5b8dee", active: true },
   { id: 3, name: "max_orl", avatar: "МО", color: "#e05b8d", active: true },
   { id: 4, name: "lera.s", avatar: "ЛС", color: "#5be0c4", active: false },
@@ -60,201 +47,136 @@ const STORIES = [
   { id: 6, name: "katya_v", avatar: "КВ", color: "#c45bee", active: false },
 ];
 
-const TABS = [
-  { id: "feed", icon: HomeIcon, label: "Лента" },
-  { id: "search", icon: SearchIcon, label: "Поиск" },
-  { id: "create", icon: PlusIcon, label: "Создать" },
-  { id: "notif", icon: BellIcon, label: "Уведомления" },
-  { id: "profile", icon: UserIcon, label: "Профиль" },
+const NOTIFS = [
+  { id: 1, user: POSTS_DATA[0].user, action: "лайкнул твой пост", time: "2м", icon: "❤️" },
+  { id: 2, user: POSTS_DATA[1].user, action: "начал читать тебя", time: "10м", icon: "👤" },
+  { id: 3, user: POSTS_DATA[2].user, action: "ответил на твой пост", time: "1ч", icon: "💬" },
+  { id: 4, user: POSTS_DATA[3].user, action: "упомянул тебя", time: "3ч", icon: "🔖" },
 ];
 
-function HomeIcon({ size = 20, active }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 9.5L12 3l9 6.5V21a1 1 0 01-1 1H4a1 1 0 01-1-1z" />
-      <path d="M9 22V12h6v10" />
+const TRENDING = ["дизайн", "разработка", "музыка", "фото", "путешествия", "код"];
+
+/* ─── ICONS ─── */
+const Icon = {
+  Home: ({ active }: { active?: boolean }) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9.5L12 3l9 6.5V21a1 1 0 01-1 1H4a1 1 0 01-1-1z" /><path d="M9 22V12h6v10" />
     </svg>
-  );
-}
-function SearchIcon({ size = 20, active }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="7" />
-      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+  ),
+  Search: () => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
     </svg>
-  );
-}
-function PlusIcon({ size = 20 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
+  ),
+  Plus: () => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
     </svg>
-  );
-}
-function BellIcon({ size = 20, active }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
-      <path d="M13.73 21a2 2 0 01-3.46 0" />
+  ),
+  Bell: ({ active }: { active?: boolean }) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 01-3.46 0" />
     </svg>
-  );
-}
-function UserIcon({ size = 20, active }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
-      <circle cx="12" cy="7" r="4" />
+  ),
+  User: ({ active }: { active?: boolean }) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" />
     </svg>
-  );
-}
-function HeartIcon({ size = 18, filled }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? "#e05b8d" : "none"} stroke={filled ? "#e05b8d" : "currentColor"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+  ),
+  Heart: ({ filled }: { filled?: boolean }) => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill={filled ? "#e05b8d" : "none"} stroke={filled ? "#e05b8d" : "currentColor"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
     </svg>
-  );
-}
-function CommentIcon({ size = 18 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+  ),
+  Comment: () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
     </svg>
-  );
-}
-function ShareIcon({ size = 18 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="17 1 21 5 17 9" />
-      <path d="M3 11V9a4 4 0 014-4h14" />
-      <polyline points="7 23 3 19 7 15" />
-      <path d="M21 13v2a4 4 0 01-4 4H3" />
+  ),
+  Share: () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 014-4h14" />
+      <polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 01-4 4H3" />
     </svg>
-  );
-}
-function HashIcon({ size = 16 }) {
-  return (
+  ),
+  Hash: ({ size = 16 }: { size?: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <line x1="4" y1="9" x2="20" y2="9" />
-      <line x1="4" y1="15" x2="20" y2="15" />
-      <line x1="10" y1="3" x2="8" y2="21" />
-      <line x1="16" y1="3" x2="14" y2="21" />
+      <line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" />
+      <line x1="10" y1="3" x2="8" y2="21" /><line x1="16" y1="3" x2="14" y2="21" />
     </svg>
-  );
-}
+  ),
+};
 
-function Avatar({ user, size = 40 }) {
+/* ─── TYPES ─── */
+type UserType = { name: string; handle: string; avatar: string; color: string };
+type PostType = { id: number; user: UserType; time: string; text: string; likes: number; comments: number; reposts: number; tags: string[]; liked: boolean };
+
+/* ─── COMPONENTS ─── */
+function Avatar({ user, size = 40 }: { user: UserType; size?: number }) {
   return (
     <div style={{
       width: size, height: size, borderRadius: "50%",
-      background: `linear-gradient(135deg, ${user.color}44, ${user.color}99)`,
-      border: `1.5px solid ${user.color}66`,
+      background: `linear-gradient(135deg, ${user.color}33, ${user.color}77)`,
+      border: `1.5px solid ${user.color}55`,
       display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: size * 0.32, fontWeight: 700, color: user.color,
+      fontSize: size * 0.3, fontWeight: 700, color: user.color,
       flexShrink: 0, letterSpacing: "-0.5px",
-      fontFamily: "'DM Sans', sans-serif",
     }}>
       {user.avatar}
     </div>
   );
 }
 
-function StoryRing({ active, color, size = 56 }) {
-  if (!active) return null;
+function PostCard({ post, onLike }: { post: PostType; onLike: (id: number) => void }) {
   return (
     <div style={{
-      position: "absolute", inset: -3,
-      borderRadius: "50%",
-      background: `conic-gradient(${color} 0%, ${color}88 60%, transparent 100%)`,
-      padding: 2,
-    }} />
-  );
-}
-
-function PostCard({ post, onLike }) {
-  return (
-    <div style={{
-      background: "#151f2e",
-      borderRadius: 16,
-      padding: "16px",
-      marginBottom: 12,
-      border: "1px solid #1e2d42",
-      transition: "border-color 0.2s",
-    }}
-      onMouseEnter={e => e.currentTarget.style.borderColor = "#2a3d58"}
-      onMouseLeave={e => e.currentTarget.style.borderColor = "#1e2d42"}
-    >
-      {/* Header */}
+      background: "#111827", borderRadius: 16, padding: 16, marginBottom: 10,
+      border: "1px solid #1f2937", transition: "border-color 0.2s",
+    }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-        <div style={{ position: "relative" }}>
-          <Avatar user={post.user} size={40} />
-        </div>
+        <Avatar user={post.user} size={40} />
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            <span style={{ color: "#e8edf5", fontWeight: 600, fontSize: 14, fontFamily: "'DM Sans', sans-serif" }}>
-              {post.user.name}
-            </span>
-            <span style={{ color: "#3d5a80", fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}>
-              @{post.user.handle}
-            </span>
+            <span style={{ color: "#f1f5f9", fontWeight: 600, fontSize: 14 }}>{post.user.name}</span>
+            <span style={{ color: "#374151", fontSize: 12 }}>@{post.user.handle}</span>
           </div>
-          <div style={{ color: "#3d5a80", fontSize: 11, fontFamily: "'DM Sans', sans-serif", marginTop: 1 }}>
-            {post.time} назад
-          </div>
+          <div style={{ color: "#374151", fontSize: 11, marginTop: 1 }}>{post.time} назад</div>
         </div>
-        <div style={{
-          width: 28, height: 28, borderRadius: 8,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          color: "#3d5a80", cursor: "pointer",
-          fontSize: 16, letterSpacing: 1,
-        }}>···</div>
+        <div style={{ color: "#374151", fontSize: 18, cursor: "pointer", padding: "0 4px", letterSpacing: 1 }}>···</div>
       </div>
 
-      {/* Text */}
-      <p style={{
-        color: "#c8d6e8", fontSize: 14, lineHeight: 1.65,
-        margin: "0 0 12px 0", fontFamily: "'DM Sans', sans-serif",
-      }}>
+      <p style={{ color: "#cbd5e1", fontSize: 14, lineHeight: 1.65, margin: "0 0 12px 0" }}>
         {post.text}
       </p>
 
-      {/* Tags */}
       {post.tags.length > 0 && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const, marginBottom: 14 }}>
           {post.tags.map(tag => (
             <span key={tag} style={{
-              background: "#1a2840", color: "#5b8dee",
-              fontSize: 11, padding: "3px 8px", borderRadius: 6,
-              fontFamily: "'DM Sans', sans-serif", fontWeight: 500,
+              background: "#0f172a", color: "#5b8dee", fontSize: 11,
+              padding: "3px 9px", borderRadius: 6, fontWeight: 500,
               display: "flex", alignItems: "center", gap: 3,
+              border: "1px solid #1e3a5f",
             }}>
-              <HashIcon size={10} />#{tag}
+              <Icon.Hash size={10} />#{tag}
             </span>
           ))}
         </div>
       )}
 
-      {/* Actions */}
-      <div style={{
-        display: "flex", gap: 0,
-        borderTop: "1px solid #1a2840", paddingTop: 12,
-      }}>
+      <div style={{ display: "flex", borderTop: "1px solid #1f2937", paddingTop: 12, gap: 4 }}>
         {[
-          { icon: <HeartIcon filled={post.liked} />, count: post.liked ? post.likes : post.likes, action: () => onLike(post.id), active: post.liked },
-          { icon: <CommentIcon />, count: post.comments, action: () => {} },
-          { icon: <ShareIcon />, count: post.reposts, action: () => {} },
+          { icon: <Icon.Heart filled={post.liked} />, count: post.likes, action: () => onLike(post.id), active: post.liked },
+          { icon: <Icon.Comment />, count: post.comments, action: () => {} },
+          { icon: <Icon.Share />, count: post.reposts, action: () => {} },
         ].map((item, i) => (
           <button key={i} onClick={item.action} style={{
             flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
             gap: 6, background: "none", border: "none", cursor: "pointer",
-            color: item.active ? "#e05b8d" : "#3d5a80",
-            fontSize: 13, fontFamily: "'DM Sans', sans-serif",
-            padding: "4px 0", borderRadius: 8,
-            transition: "color 0.15s",
-          }}
-            onMouseEnter={e => !item.active && (e.currentTarget.style.color = "#8aafd4")}
-            onMouseLeave={e => !item.active && (e.currentTarget.style.color = "#3d5a80")}
-          >
+            color: item.active ? "#e05b8d" : "#4b5563", fontSize: 13,
+            padding: "4px 0", borderRadius: 8, transition: "color 0.15s",
+            fontFamily: "inherit",
+          }}>
             {item.icon}
             <span style={{ fontWeight: 500 }}>{item.count}</span>
           </button>
@@ -264,56 +186,40 @@ function PostCard({ post, onLike }) {
   );
 }
 
-function FeedPage({ posts, onLike }) {
+/* ─── PAGES ─── */
+function FeedPage({ posts, onLike }: { posts: PostType[]; onLike: (id: number) => void }) {
   return (
-    <div style={{ paddingBottom: 16 }}>
+    <div>
       {/* Stories */}
-      <div style={{
-        display: "flex", gap: 14, overflowX: "auto", padding: "4px 0 16px",
-        scrollbarWidth: "none",
-      }}>
-        {STORIES.map(s => (
-          <div key={s.id} style={{
-            display: "flex", flexDirection: "column", alignItems: "center",
-            gap: 5, cursor: "pointer", flexShrink: 0,
-          }}>
-            <div style={{ position: "relative", width: 56, height: 56 }}>
+      <div style={{ display: "flex", gap: 14, overflowX: "auto" as const, padding: "4px 0 20px", scrollbarWidth: "none" as const }}>
+        {STORIES_DATA.map(s => (
+          <div key={s.id} style={{ display: "flex", flexDirection: "column" as const, alignItems: "center", gap: 5, cursor: "pointer", flexShrink: 0 }}>
+            <div style={{ position: "relative" as const, width: 58, height: 58 }}>
               {s.active && (
                 <div style={{
-                  position: "absolute", inset: -2, borderRadius: "50%",
-                  background: `linear-gradient(135deg, ${s.color}, ${s.color}55)`,
-                  zIndex: 0,
+                  position: "absolute" as const, inset: -2, borderRadius: "50%",
+                  background: `linear-gradient(135deg, ${s.color}, ${s.color}44)`,
                 }} />
               )}
+              <div style={{ position: "absolute" as const, inset: s.active ? 2 : 0, borderRadius: "50%", background: "#0a0f1a" }} />
               <div style={{
-                position: "absolute", inset: s.active ? 2 : 0,
-                borderRadius: "50%", background: "#0e1621", zIndex: 1,
-              }} />
-              <div style={{
-                position: "absolute", inset: s.active ? 4 : 0,
-                borderRadius: "50%", zIndex: 2,
-                background: `linear-gradient(135deg, ${s.color}33, ${s.color}77)`,
-                border: `1.5px solid ${s.color}55`,
+                position: "absolute" as const, inset: s.active ? 4 : 0, borderRadius: "50%",
+                background: `linear-gradient(135deg, ${s.color}22, ${s.color}55)`,
+                border: `1.5px solid ${s.color}44`,
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 14, fontWeight: 700, color: s.color,
-                fontFamily: "'DM Sans', sans-serif",
+                fontSize: s.isOwn ? 22 : 14, fontWeight: 700, color: s.color,
               }}>
-                {s.isOwn ? (
-                  <span style={{ fontSize: 20, color: s.color, lineHeight: 1 }}>+</span>
-                ) : s.avatar}
+                {s.avatar}
               </div>
             </div>
             <span style={{
-              fontSize: 10, color: s.active ? "#8aafd4" : "#3d5a80",
-              fontFamily: "'DM Sans', sans-serif", maxWidth: 56,
-              textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap",
-              textAlign: "center",
+              fontSize: 10, color: s.active ? "#94a3b8" : "#374151",
+              maxWidth: 58, textOverflow: "ellipsis", overflow: "hidden",
+              whiteSpace: "nowrap" as const, textAlign: "center" as const,
             }}>{s.name}</span>
           </div>
         ))}
       </div>
-
-      {/* Posts */}
       {posts.map(p => <PostCard key={p.id} post={p} onLike={onLike} />)}
     </div>
   );
@@ -321,461 +227,319 @@ function FeedPage({ posts, onLike }) {
 
 function SearchPage() {
   const [query, setQuery] = useState("");
-  const trending = ["#дизайн", "#разработка", "#музыка", "#фото", "#путешествия", "#код"];
   return (
     <div>
-      <div style={{
-        position: "relative", marginBottom: 20,
-      }}>
+      <div style={{ position: "relative" as const, marginBottom: 24 }}>
         <input
-          value={query}
-          onChange={e => setQuery(e.target.value)}
+          value={query} onChange={e => setQuery(e.target.value)}
           placeholder="Поиск по Hashtag..."
           style={{
-            width: "100%", padding: "12px 16px 12px 44px",
-            background: "#151f2e", border: "1px solid #1e2d42",
-            borderRadius: 12, color: "#e8edf5", fontSize: 14,
-            fontFamily: "'DM Sans', sans-serif", outline: "none",
-            boxSizing: "border-box",
-            transition: "border-color 0.2s",
+            width: "100%", padding: "13px 16px 13px 44px",
+            background: "#111827", border: "1px solid #1f2937",
+            borderRadius: 12, color: "#f1f5f9", fontSize: 14,
+            fontFamily: "inherit", outline: "none", boxSizing: "border-box" as const,
           }}
-          onFocus={e => e.target.style.borderColor = "#5b8dee55"}
-          onBlur={e => e.target.style.borderColor = "#1e2d42"}
         />
-        <div style={{
-          position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
-          color: "#3d5a80",
-        }}>
-          <SearchIcon size={16} />
+        <div style={{ position: "absolute" as const, left: 14, top: "50%", transform: "translateY(-50%)", color: "#4b5563" }}>
+          <Icon.Search />
         </div>
       </div>
 
-      <div style={{ marginBottom: 8 }}>
-        <h3 style={{
-          color: "#5b8dee", fontSize: 11, fontFamily: "'DM Sans', sans-serif",
-          fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase",
-          margin: "0 0 12px 0",
-        }}>Популярные теги</h3>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {trending.map(tag => (
-            <div key={tag} style={{
-              background: "#151f2e", border: "1px solid #1e2d42",
-              borderRadius: 10, padding: "8px 14px",
-              color: "#8aafd4", fontSize: 13, fontFamily: "'DM Sans', sans-serif",
-              cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
-              transition: "all 0.15s",
-            }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = "#5b8dee44"; e.currentTarget.style.color = "#5b8dee"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "#1e2d42"; e.currentTarget.style.color = "#8aafd4"; }}
-            >
-              <HashIcon size={12} />{tag.slice(1)}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ marginTop: 24 }}>
-        <h3 style={{
-          color: "#5b8dee", fontSize: 11, fontFamily: "'DM Sans', sans-serif",
-          fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase",
-          margin: "0 0 12px 0",
-        }}>Кого читать</h3>
-        {POSTS.map(p => (
-          <div key={p.id} style={{
-            display: "flex", alignItems: "center", gap: 12,
-            padding: "10px 0", borderBottom: "1px solid #1a2840",
+      <p style={{ color: "#374151", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" as const, margin: "0 0 12px" }}>Популярные теги</p>
+      <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, marginBottom: 28 }}>
+        {TRENDING.map(tag => (
+          <div key={tag} style={{
+            background: "#111827", border: "1px solid #1f2937", borderRadius: 10,
+            padding: "8px 14px", color: "#64748b", fontSize: 13, cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 5,
           }}>
-            <Avatar user={p.user} size={42} />
-            <div style={{ flex: 1 }}>
-              <div style={{ color: "#e8edf5", fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif" }}>
-                {p.user.name}
-              </div>
-              <div style={{ color: "#3d5a80", fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}>
-                @{p.user.handle}
-              </div>
-            </div>
-            <button style={{
-              background: "transparent", border: "1px solid #5b8dee55",
-              borderRadius: 8, padding: "6px 14px", color: "#5b8dee",
-              fontSize: 12, fontFamily: "'DM Sans', sans-serif", cursor: "pointer",
-              fontWeight: 600, transition: "all 0.15s",
-            }}
-              onMouseEnter={e => { e.currentTarget.style.background = "#5b8dee22"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-            >
-              Читать
-            </button>
+            <Icon.Hash size={12} />{tag}
           </div>
         ))}
       </div>
+
+      <p style={{ color: "#374151", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" as const, margin: "0 0 12px" }}>Кого читать</p>
+      {POSTS_DATA.map(p => (
+        <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid #111827" }}>
+          <Avatar user={p.user} size={44} />
+          <div style={{ flex: 1 }}>
+            <div style={{ color: "#f1f5f9", fontSize: 14, fontWeight: 600 }}>{p.user.name}</div>
+            <div style={{ color: "#374151", fontSize: 12 }}>@{p.user.handle}</div>
+          </div>
+          <button style={{
+            background: "transparent", border: "1px solid #1e3a5f", borderRadius: 9,
+            padding: "6px 16px", color: "#5b8dee", fontSize: 12, cursor: "pointer",
+            fontFamily: "inherit", fontWeight: 600,
+          }}>Читать</button>
+        </div>
+      ))}
     </div>
   );
 }
 
-function ProfilePage() {
-  const [activeTab, setActiveTab] = useState("posts");
-  const me = { name: "Ты", handle: "my_profile", avatar: "Я", color: "#5b8dee" };
+function CreatePage() {
+  const [text, setText] = useState("");
   return (
-    <div>
-      {/* Cover */}
-      <div style={{
-        height: 100, borderRadius: 16, marginBottom: -32,
-        background: "linear-gradient(135deg, #0e1e35 0%, #1a2d4a 50%, #0e2040 100%)",
-        border: "1px solid #1e2d42",
-        position: "relative", overflow: "hidden",
-      }}>
-        <div style={{
-          position: "absolute", top: 20, right: 24,
-          width: 80, height: 80, borderRadius: "50%",
-          background: "radial-gradient(circle, #5b8dee11, transparent)",
-          border: "1px solid #5b8dee22",
-        }} />
-        <div style={{
-          position: "absolute", top: -10, left: "40%",
-          width: 120, height: 120, borderRadius: "50%",
-          background: "radial-gradient(circle, #5be0c411, transparent)",
-        }} />
+    <div style={{ background: "#111827", borderRadius: 16, border: "1px solid #1f2937", padding: 20 }}>
+      <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+        <Avatar user={{ name: "Я", handle: "me", avatar: "Я", color: "#5b8dee" }} size={44} />
+        <textarea
+          value={text} onChange={e => setText(e.target.value)}
+          placeholder="Что у тебя нового?"
+          style={{
+            flex: 1, minHeight: 120, background: "transparent",
+            border: "none", outline: "none", color: "#f1f5f9",
+            fontSize: 15, fontFamily: "inherit", resize: "none" as const, lineHeight: 1.65,
+          }}
+        />
       </div>
-
-      {/* Avatar */}
-      <div style={{ paddingLeft: 16, marginBottom: 12, position: "relative", zIndex: 1 }}>
-        <div style={{
-          width: 72, height: 72, borderRadius: "50%",
-          background: `linear-gradient(135deg, ${me.color}44, ${me.color}99)`,
-          border: `3px solid #0e1621`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 22, fontWeight: 700, color: me.color,
-          fontFamily: "'DM Sans', sans-serif",
-          boxShadow: `0 0 0 1.5px ${me.color}44`,
-        }}>
-          {me.avatar}
-        </div>
-      </div>
-
-      {/* Info */}
-      <div style={{ padding: "0 16px 16px", borderBottom: "1px solid #1a2840" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-          <div>
-            <div style={{ color: "#e8edf5", fontSize: 18, fontWeight: 700, fontFamily: "'DM Sans', sans-serif" }}>
-              Мой профиль
-            </div>
-            <div style={{ color: "#3d5a80", fontSize: 13, fontFamily: "'DM Sans', sans-serif", marginTop: 2 }}>
-              @{me.handle}
-            </div>
-          </div>
-          <button style={{
-            background: "transparent", border: "1px solid #2a3d58",
-            borderRadius: 10, padding: "7px 16px", color: "#8aafd4",
-            fontSize: 13, fontFamily: "'DM Sans', sans-serif", cursor: "pointer",
-            fontWeight: 500,
-          }}>
-            Редактировать
-          </button>
-        </div>
-
-        <p style={{
-          color: "#8aafd4", fontSize: 13, lineHeight: 1.6,
-          margin: "12px 0", fontFamily: "'DM Sans', sans-serif",
-        }}>
-          Просто живу и иногда пишу сюда. Люблю код, музыку и хорошие идеи ✨
-        </p>
-
-        <div style={{ display: "flex", gap: 24 }}>
-          {[["348", "постов"], ["1.2K", "читателей"], ["280", "читает"]].map(([n, l]) => (
-            <div key={l} style={{ textAlign: "center" }}>
-              <div style={{ color: "#e8edf5", fontWeight: 700, fontSize: 16, fontFamily: "'DM Sans', sans-serif" }}>{n}</div>
-              <div style={{ color: "#3d5a80", fontSize: 11, fontFamily: "'DM Sans', sans-serif" }}>{l}</div>
-            </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #1f2937", paddingTop: 14 }}>
+        <div style={{ display: "flex", gap: 16 }}>
+          {["📷", "🎵", "📍"].map(ic => (
+            <button key={ic} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, padding: 4, borderRadius: 6 }}>{ic}</button>
           ))}
+          <button style={{ background: "none", border: "none", cursor: "pointer", color: "#5b8dee", padding: 4 }}><Icon.Hash size={18} /></button>
         </div>
-      </div>
-
-      {/* Tabs */}
-      <div style={{ display: "flex", borderBottom: "1px solid #1a2840" }}>
-        {["posts", "media", "likes"].map(t => (
-          <button key={t} onClick={() => setActiveTab(t)} style={{
-            flex: 1, padding: "12px 0", background: "none", border: "none",
-            cursor: "pointer", fontSize: 13, fontFamily: "'DM Sans', sans-serif",
-            color: activeTab === t ? "#5b8dee" : "#3d5a80",
-            borderBottom: activeTab === t ? "2px solid #5b8dee" : "2px solid transparent",
-            fontWeight: activeTab === t ? 600 : 400,
-            transition: "all 0.15s",
-          }}>
-            {{ posts: "Посты", media: "Медиа", likes: "Лайки" }[t]}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ paddingTop: 12 }}>
-        {POSTS.slice(0, 2).map(p => <PostCard key={p.id} post={p} onLike={() => {}} />)}
+        <button style={{
+          background: text.length > 0 ? "linear-gradient(135deg, #5b8dee, #3a6bc7)" : "#1f2937",
+          border: "none", borderRadius: 10, padding: "10px 24px",
+          color: text.length > 0 ? "#fff" : "#374151", fontSize: 14,
+          fontFamily: "inherit", fontWeight: 600, cursor: text.length > 0 ? "pointer" : "default",
+          transition: "all 0.2s",
+        }}>Опубликовать</button>
       </div>
     </div>
   );
 }
 
 function NotifPage() {
-  const notifs = [
-    { id: 1, user: POSTS[0].user, action: "лайкнул твой пост", time: "2м", icon: "❤️" },
-    { id: 2, user: POSTS[1].user, action: "начал читать тебя", time: "10м", icon: "👤" },
-    { id: 3, user: POSTS[2].user, action: "ответил на твой пост", time: "1ч", icon: "💬" },
-    { id: 4, user: POSTS[3].user, action: "упомянул тебя", time: "3ч", icon: "🔖" },
-  ];
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
-        <h3 style={{
-          color: "#5b8dee", fontSize: 11, fontFamily: "'DM Sans', sans-serif",
-          fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase",
-          margin: "0 0 12px 0",
-        }}>Последние</h3>
-        {notifs.map(n => (
-          <div key={n.id} style={{
-            display: "flex", alignItems: "center", gap: 12,
-            padding: "12px 0", borderBottom: "1px solid #1a2840",
-          }}>
-            <div style={{ position: "relative" }}>
-              <Avatar user={n.user} size={42} />
-              <div style={{
-                position: "absolute", bottom: -2, right: -2,
-                fontSize: 14, lineHeight: 1,
-              }}>{n.icon}</div>
-            </div>
-            <div style={{ flex: 1 }}>
-              <span style={{ color: "#e8edf5", fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans', sans-serif" }}>
-                {n.user.name}
-              </span>
-              <span style={{ color: "#8aafd4", fontSize: 13, fontFamily: "'DM Sans', sans-serif" }}>
-                {" "}{n.action}
-              </span>
-              <div style={{ color: "#3d5a80", fontSize: 11, fontFamily: "'DM Sans', sans-serif", marginTop: 2 }}>
-                {n.time} назад
-              </div>
-            </div>
+      <p style={{ color: "#374151", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" as const, margin: "0 0 16px" }}>Последние</p>
+      {NOTIFS.map(n => (
+        <div key={n.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 0", borderBottom: "1px solid #111827" }}>
+          <div style={{ position: "relative" as const }}>
+            <Avatar user={n.user} size={44} />
+            <div style={{ position: "absolute" as const, bottom: -2, right: -2, fontSize: 14 }}>{n.icon}</div>
           </div>
+          <div style={{ flex: 1 }}>
+            <span style={{ color: "#f1f5f9", fontSize: 13, fontWeight: 600 }}>{n.user.name}</span>
+            <span style={{ color: "#94a3b8", fontSize: 13 }}> {n.action}</span>
+            <div style={{ color: "#374151", fontSize: 11, marginTop: 3 }}>{n.time} назад</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ProfilePage() {
+  const [tab, setTab] = useState("posts");
+  const me: UserType = { name: "Мой профиль", handle: "my_profile", avatar: "Я", color: "#5b8dee" };
+  return (
+    <div>
+      <div style={{
+        height: 100, borderRadius: 16, marginBottom: -32,
+        background: "linear-gradient(135deg, #0c1830, #1a2d4a, #0c2040)",
+        border: "1px solid #1f2937", position: "relative" as const, overflow: "hidden" as const,
+      }}>
+        <div style={{ position: "absolute" as const, top: 15, right: 20, width: 90, height: 90, borderRadius: "50%", background: "radial-gradient(circle, #5b8dee0d, transparent)", border: "1px solid #5b8dee11" }} />
+      </div>
+      <div style={{ paddingLeft: 16, marginBottom: 12, position: "relative" as const, zIndex: 1 }}>
+        <div style={{
+          width: 72, height: 72, borderRadius: "50%",
+          background: `linear-gradient(135deg, ${me.color}33, ${me.color}77)`,
+          border: `3px solid #0a0f1a`, display: "flex", alignItems: "center",
+          justifyContent: "center", fontSize: 22, fontWeight: 700, color: me.color,
+          boxShadow: `0 0 0 1.5px ${me.color}33`,
+        }}>{me.avatar}</div>
+      </div>
+      <div style={{ padding: "0 16px 20px", borderBottom: "1px solid #1f2937" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <div style={{ color: "#f1f5f9", fontSize: 18, fontWeight: 700 }}>{me.name}</div>
+            <div style={{ color: "#374151", fontSize: 13, marginTop: 2 }}>@{me.handle}</div>
+          </div>
+          <button style={{ background: "transparent", border: "1px solid #1f2937", borderRadius: 10, padding: "7px 16px", color: "#94a3b8", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>
+            Редактировать
+          </button>
+        </div>
+        <p style={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.6, margin: "12px 0" }}>
+          Просто живу и иногда пишу сюда. Люблю код, музыку и хорошие идеи ✨
+        </p>
+        <div style={{ display: "flex", gap: 28 }}>
+          {[["348", "постов"], ["1.2K", "читателей"], ["280", "читает"]].map(([n, l]) => (
+            <div key={l}>
+              <div style={{ color: "#f1f5f9", fontWeight: 700, fontSize: 17 }}>{n}</div>
+              <div style={{ color: "#374151", fontSize: 11 }}>{l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: "flex", borderBottom: "1px solid #1f2937" }}>
+        {["posts", "media", "likes"].map(t => (
+          <button key={t} onClick={() => setTab(t)} style={{
+            flex: 1, padding: "12px 0", background: "none", border: "none", cursor: "pointer",
+            fontSize: 13, color: tab === t ? "#5b8dee" : "#374151", fontFamily: "inherit",
+            borderBottom: tab === t ? "2px solid #5b8dee" : "2px solid transparent",
+            fontWeight: tab === t ? 600 : 400, transition: "all 0.15s",
+          }}>
+            {{ posts: "Посты", media: "Медиа", likes: "Лайки" }[t]}
+          </button>
         ))}
+      </div>
+      <div style={{ paddingTop: 12 }}>
+        {POSTS_DATA.slice(0, 2).map(p => <PostCard key={p.id} post={p} onLike={() => {}} />)}
       </div>
     </div>
   );
 }
 
-export default function HashtagApp() {
-  const [activeTab, setActiveTab] = useState("feed");
-  const [posts, setPosts] = useState(POSTS);
+/* ─── NAV ─── */
+const TABS = [
+  { id: "feed", label: "Лента", Icon: Icon.Home },
+  { id: "search", label: "Поиск", Icon: Icon.Search },
+  { id: "create", label: "Создать", Icon: Icon.Plus },
+  { id: "notif", label: "Уведомления", Icon: Icon.Bell },
+  { id: "profile", label: "Профиль", Icon: Icon.User },
+];
 
-  const handleLike = (id) => {
+/* ─── APP ─── */
+export default function Page() {
+  const [tab, setTab] = useState("feed");
+  const [posts, setPosts] = useState<PostType[]>(POSTS_DATA);
+
+  const handleLike = (id: number) => {
     setPosts(prev => prev.map(p =>
       p.id === id ? { ...p, liked: !p.liked, likes: p.liked ? p.likes - 1 : p.likes + 1 } : p
     ));
   };
 
-  const titles = { feed: "Hashtag", search: "Поиск", create: "Новый пост", notif: "Уведомления", profile: "Профиль" };
+  const titles: Record<string, string> = { feed: "Hashtag", search: "Поиск", create: "Новый пост", notif: "Уведомления", profile: "Профиль" };
 
   return (
-    <div style={{
-      minHeight: "100vh",
-      background: "#0e1621",
-      fontFamily: "'DM Sans', sans-serif",
-      display: "flex",
-      justifyContent: "center",
-    }}>
-      {/* Google Font */}
+    <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
-        * { box-sizing: border-box; }
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { background: #0a0f1a; color: #f1f5f9; font-family: 'Manrope', sans-serif; }
         ::-webkit-scrollbar { display: none; }
-        body { margin: 0; background: #0e1621; }
-        input::placeholder { color: #3d5a80 !important; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        input, textarea, button { font-family: 'Manrope', sans-serif; }
+        input::placeholder, textarea::placeholder { color: #374151; }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+        .page-content { animation: fadeUp 0.25s ease; }
+        @media (min-width: 768px) {
+          .sidebar { display: flex !important; }
+          .bottom-nav { display: none !important; }
+        }
       `}</style>
 
-      {/* Desktop sidebar */}
-      <div style={{
-        display: "none",
-        position: "sticky", top: 0, height: "100vh",
-        flexDirection: "column", gap: 4,
-        padding: "24px 16px",
-        width: 240, flexShrink: 0,
-        borderRight: "1px solid #1a2840",
-        "@media (min-width: 768px)": { display: "flex" },
-      }}
-        className="desktop-sidebar"
-      >
-        {/* Logo */}
-        <div style={{
-          display: "flex", alignItems: "center", gap: 10,
-          padding: "8px 12px", marginBottom: 20,
-        }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: "linear-gradient(135deg, #5b8dee, #3a6bc7)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <HashIcon size={18} />
-          </div>
-          <span style={{
-            color: "#e8edf5", fontSize: 20, fontWeight: 700,
-            letterSpacing: "-0.5px",
-          }}>Hashtag</span>
-        </div>
+      <div style={{ display: "flex", minHeight: "100vh", justifyContent: "center", background: "#0a0f1a" }}>
 
-        {TABS.map(t => {
-          const Icon = t.icon;
-          const isActive = activeTab === t.id;
-          return (
-            <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
-              display: "flex", alignItems: "center", gap: 12,
-              padding: "10px 14px", borderRadius: 12, border: "none",
-              background: isActive ? "#151f2e" : "transparent",
-              color: isActive ? "#5b8dee" : "#4a6580",
-              cursor: "pointer", fontSize: 15, fontWeight: isActive ? 600 : 400,
-              fontFamily: "'DM Sans', sans-serif",
-              transition: "all 0.15s", textAlign: "left",
-            }}
-              onMouseEnter={e => !isActive && (e.currentTarget.style.background = "#151f2e55")}
-              onMouseLeave={e => !isActive && (e.currentTarget.style.background = "transparent")}
-            >
-              <Icon size={20} active={isActive} />
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Main */}
-      <div style={{
-        flex: 1, maxWidth: 600,
-        display: "flex", flexDirection: "column",
-        minHeight: "100vh",
-      }}>
-        {/* Header */}
-        <div style={{
-          position: "sticky", top: 0, zIndex: 10,
-          background: "#0e1621ee",
-          backdropFilter: "blur(12px)",
-          padding: "16px 16px 12px",
-          borderBottom: "1px solid #1a2840",
+        {/* Sidebar (desktop) */}
+        <div className="sidebar" style={{
+          display: "none", flexDirection: "column" as const, gap: 2,
+          padding: "24px 12px", width: 220, flexShrink: 0,
+          borderRight: "1px solid #111827", position: "sticky" as const,
+          top: 0, height: "100vh",
         }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              {activeTab === "feed" && (
-                <div style={{
-                  width: 30, height: 30, borderRadius: 8,
-                  background: "linear-gradient(135deg, #5b8dee, #3a6bc7)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  <HashIcon size={15} />
-                </div>
-              )}
-              <h1 style={{
-                color: "#e8edf5", fontSize: 20, fontWeight: 700,
-                margin: 0, letterSpacing: "-0.3px",
-              }}>
-                {titles[activeTab]}
-              </h1>
+          {/* Logo */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", marginBottom: 20 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: "linear-gradient(135deg, #5b8dee, #3a6bc7)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Icon.Hash size={16} />
             </div>
-            <div style={{
-              width: 34, height: 34, borderRadius: 10,
-              background: "#151f2e", border: "1px solid #1e2d42",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: "#3d5a80", cursor: "pointer", fontSize: 15,
-            }}>⚙</div>
+            <span style={{ color: "#f1f5f9", fontSize: 19, fontWeight: 800, letterSpacing: "-0.5px" }}>Hashtag</span>
           </div>
-        </div>
-
-        {/* Content */}
-        <div style={{
-          flex: 1, padding: "16px 16px 80px",
-          animation: "fadeIn 0.25s ease",
-          overflowY: "auto",
-        }}>
-          {activeTab === "feed" && <FeedPage posts={posts} onLike={handleLike} />}
-          {activeTab === "search" && <SearchPage />}
-          {activeTab === "notif" && <NotifPage />}
-          {activeTab === "profile" && <ProfilePage />}
-          {activeTab === "create" && (
-            <div style={{
-              background: "#151f2e", borderRadius: 16,
-              border: "1px solid #1e2d42", padding: 20,
-            }}>
-              <textarea placeholder="Что у тебя нового?" style={{
-                width: "100%", minHeight: 120,
-                background: "transparent", border: "none", outline: "none",
-                color: "#e8edf5", fontSize: 15, fontFamily: "'DM Sans', sans-serif",
-                resize: "none", lineHeight: 1.65,
-              }} />
-              <div style={{
-                display: "flex", justifyContent: "space-between",
-                alignItems: "center", borderTop: "1px solid #1a2840", paddingTop: 12, marginTop: 8,
-              }}>
-                <div style={{ display: "flex", gap: 12 }}>
-                  {["📷", "🎵", "📍", "#"].map(ic => (
-                    <button key={ic} style={{
-                      background: "none", border: "none", cursor: "pointer",
-                      fontSize: ic === "#" ? 15 : 18, color: "#3d5a80",
-                      padding: 4, borderRadius: 6,
-                    }}>{ic}</button>
-                  ))}
-                </div>
-                <button style={{
-                  background: "linear-gradient(135deg, #5b8dee, #3a6bc7)",
-                  border: "none", borderRadius: 10, padding: "9px 22px",
-                  color: "#fff", fontSize: 14, fontWeight: 600,
-                  fontFamily: "'DM Sans', sans-serif", cursor: "pointer",
-                }}>Опубликовать</button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Bottom nav */}
-        <div style={{
-          position: "fixed", bottom: 0, left: 0, right: 0,
-          background: "#0e1621f0",
-          backdropFilter: "blur(16px)",
-          borderTop: "1px solid #1a2840",
-          display: "flex", padding: "8px 0 12px",
-          zIndex: 20,
-        }}>
           {TABS.map(t => {
-            const Icon = t.icon;
-            const isActive = activeTab === t.id;
+            const active = tab === t.id;
             return (
-              <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
-                flex: 1, display: "flex", flexDirection: "column",
-                alignItems: "center", gap: 3,
-                background: "none", border: "none", cursor: "pointer",
-                color: isActive ? "#5b8dee" : "#3d5a80",
-                padding: "4px 0", transition: "color 0.15s",
+              <button key={t.id} onClick={() => setTab(t.id)} style={{
+                display: "flex", alignItems: "center", gap: 12,
+                padding: "10px 14px", borderRadius: 12, border: "none",
+                background: active ? "#111827" : "transparent",
+                color: active ? "#5b8dee" : "#4b5563",
+                cursor: "pointer", fontSize: 15, fontWeight: active ? 600 : 400,
+                fontFamily: "inherit", textAlign: "left" as const, transition: "all 0.15s",
               }}>
-                {t.id === "create" ? (
-                  <div style={{
-                    width: 40, height: 40, borderRadius: 12,
-                    background: "linear-gradient(135deg, #5b8dee, #3a6bc7)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    color: "#fff", marginTop: -8,
-                    boxShadow: "0 4px 16px #5b8dee44",
-                  }}>
-                    <Icon size={20} />
-                  </div>
-                ) : (
-                  <>
-                    <Icon size={22} active={isActive} />
-                    <span style={{ fontSize: 10, fontFamily: "'DM Sans', sans-serif", fontWeight: isActive ? 600 : 400 }}>
-                      {t.label}
-                    </span>
-                  </>
-                )}
+                <t.Icon active={active} />
+                {t.label}
               </button>
             );
           })}
         </div>
-      </div>
 
-      <style>{`
-        @media (min-width: 768px) {
-          .desktop-sidebar { display: flex !important; }
-        }
-      `}</style>
-    </div>
+        {/* Main */}
+        <div style={{ flex: 1, maxWidth: 600, display: "flex", flexDirection: "column" as const, minHeight: "100vh" }}>
+
+          {/* Header */}
+          <div style={{
+            position: "sticky" as const, top: 0, zIndex: 10,
+            background: "#0a0f1acc", backdropFilter: "blur(16px)",
+            padding: "16px 16px 13px", borderBottom: "1px solid #111827",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                {tab === "feed" && (
+                  <div style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(135deg, #5b8dee, #3a6bc7)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Icon.Hash size={14} />
+                  </div>
+                )}
+                <h1 style={{ color: "#f1f5f9", fontSize: 20, fontWeight: 800, letterSpacing: "-0.3px" }}>
+                  {titles[tab]}
+                </h1>
+              </div>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: "#111827", border: "1px solid #1f2937", display: "flex", alignItems: "center", justifyContent: "center", color: "#4b5563", cursor: "pointer", fontSize: 16 }}>
+                ⚙
+              </div>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="page-content" key={tab} style={{ flex: 1, padding: "16px 16px 90px", overflowY: "auto" as const }}>
+            {tab === "feed" && <FeedPage posts={posts} onLike={handleLike} />}
+            {tab === "search" && <SearchPage />}
+            {tab === "create" && <CreatePage />}
+            {tab === "notif" && <NotifPage />}
+            {tab === "profile" && <ProfilePage />}
+          </div>
+
+          {/* Bottom nav (mobile) */}
+          <div className="bottom-nav" style={{
+            position: "fixed" as const, bottom: 0, left: 0, right: 0,
+            background: "#0a0f1af0", backdropFilter: "blur(20px)",
+            borderTop: "1px solid #111827", display: "flex",
+            padding: "8px 0 14px", zIndex: 20,
+          }}>
+            {TABS.map(t => {
+              const active = tab === t.id;
+              return (
+                <button key={t.id} onClick={() => setTab(t.id)} style={{
+                  flex: 1, display: "flex", flexDirection: "column" as const,
+                  alignItems: "center", gap: 3, background: "none", border: "none",
+                  cursor: "pointer", color: active ? "#5b8dee" : "#374151",
+                  padding: "4px 0", transition: "color 0.15s", fontFamily: "inherit",
+                }}>
+                  {t.id === "create" ? (
+                    <div style={{
+                      width: 42, height: 42, borderRadius: 13, marginTop: -10,
+                      background: "linear-gradient(135deg, #5b8dee, #3a6bc7)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      color: "#fff", boxShadow: "0 4px 20px #5b8dee44",
+                    }}>
+                      <t.Icon />
+                    </div>
+                  ) : (
+                    <>
+                      <t.Icon active={active} />
+                      <span style={{ fontSize: 10, fontWeight: active ? 600 : 400 }}>{t.label}</span>
+                    </>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
