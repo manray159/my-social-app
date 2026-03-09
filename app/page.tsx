@@ -80,7 +80,7 @@ function Toast({ msg, onClose }: { msg: string; onClose: () => void }) {
 
 // ── AUTH PAGE ──
 function AuthPage({ onAuth }: { onAuth: (u: AuthUser, p: Profile) => void }) {
-  const [mode, setMode] = useState<'login'|'register'>('login')
+  const [mode, setMode] = useState<string>('login')
   const [form, setForm] = useState({ username: '', email: '', password: '' })
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -476,7 +476,8 @@ function FeedPage({ user, profile }: { user: AuthUser; profile: Profile }) {
   const [posts, setPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState('')
-  const [mode, setMode] = useState<'feed'|'tiktok'>('feed')
+  type FeedMode = string
+  const [mode, setMode] = useState<FeedMode>('feed')
   const [activeIdx, setActiveIdx] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -566,8 +567,8 @@ function FeedPage({ user, profile }: { user: AuthUser; profile: Profile }) {
       {toast && <Toast msg={toast} onClose={() => setToast('')} />}
       {/* Mode switcher */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, background: '#111827', borderRadius: 12, padding: 4 }}>
-        <button onClick={() => setMode('feed' as const)} style={{ flex: 1, padding: '8px 0', borderRadius: 9, border: 'none', background: mode==='feed'?'#1f2937':'transparent', color: mode==='feed'?'#f1f5f9':'#4b5563', fontFamily: 'inherit', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>📰 Лента</button>
-        <button onClick={() => setMode('tiktok' as const)} style={{ flex: 1, padding: '8px 0', borderRadius: 9, border: 'none', background: mode==='tiktok'?'#1f2937':'transparent', color: mode==='tiktok'?'#f1f5f9':'#4b5563', fontFamily: 'inherit', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>▶️ Видео</button>
+        <button onClick={() => setMode('feed')} style={{ flex: 1, padding: '8px 0', borderRadius: 9, border: 'none', background: mode==='feed'?'#1f2937':'transparent', color: mode==='feed'?'#f1f5f9':'#4b5563', fontFamily: 'inherit', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>📰 Лента</button>
+        <button onClick={() => setMode('tiktok')} style={{ flex: 1, padding: '8px 0', borderRadius: 9, border: 'none', background: mode==='tiktok'?'#1f2937':'transparent', color: mode==='tiktok'?'#f1f5f9':'#4b5563', fontFamily: 'inherit', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>▶️ Видео</button>
       </div>
       <StoriesBar user={user} profile={profile} />
       <CreatePost user={user} profile={profile} onPost={p => setPosts(prev => [{ ...p, liked: false, saved: false }, ...prev])} />
@@ -631,7 +632,7 @@ function NotificationsPage({ user }: { user: AuthUser }) {
 
 // ── FRIENDS PAGE ──
 function FriendsPage({ user }: { user: AuthUser }) {
-  const [tab, setTab] = useState<'friends'|'requests'|'find'>('friends')
+  const [tab, setTab] = useState<string>('friends')
   // friends table: user_email, friend_email
   const [friends, setFriends] = useState<{id:string;user_email:string;friend_email:string}[]>([])
   // friendships table: requester_id, receiver_id, status
@@ -1231,7 +1232,7 @@ function MusicPage({ user }: { user: AuthUser }) {
   const [duration, setDuration] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'all'|'my'|'playlists'>('all')
+  const [tab, setTab] = useState<string>('all')
   const [query, setQuery] = useState('')
   const [showUpload, setShowUpload] = useState(false)
   const [showNewPlaylist, setShowNewPlaylist] = useState(false)
@@ -1481,7 +1482,7 @@ function SearchPage({ user }: { user: AuthUser }) {
   const [posts, setPosts] = useState<Post[]>([])
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [loading, setLoading] = useState(false)
-  const [tab, setTab] = useState<'posts'|'people'>('posts')
+  const [tab, setTab] = useState<string>('posts')
 
   const search = async () => {
     if (!query.trim()) return
@@ -1526,7 +1527,7 @@ function SearchPage({ user }: { user: AuthUser }) {
 
 // ── PROFILE PAGE ──
 function ProfilePage({ user, profile, setProfile, onLogout }: { user: AuthUser; profile: Profile; setProfile: (p: Profile) => void; onLogout: () => void }) {
-  const [tab, setTab] = useState<'posts'|'media'|'saved'>('posts')
+  const [tab, setTab] = useState<string>('posts')
   const [posts, setPosts] = useState<Post[]>([])
   const [savedPosts, setSavedPosts] = useState<Post[]>([])
   const [editing, setEditing] = useState(false)
