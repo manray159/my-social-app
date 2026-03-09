@@ -366,11 +366,119 @@ function CreatePost({ user, profile, onPost }: { user: AuthUser; profile: Profil
   )
 }
 
+// ── TIKTOK CARD ──
+function TikTokCard({ post, currentUser, onLike, onSave, active }: { post: Post; currentUser: AuthUser; onLike: (p: Post) => void; onSave: (p: Post) => void; active: boolean }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const [showComments, setShowComments] = useState(false)
+  const [comments, setComments] = useState<{id:string;content:string;username:string;created_at:string}[]>([])
+  const [commentText, setCommentText] = useState('')
+  const [muted, setMuted] = useState(true)
+
+  useEffect(() => {
+    if (!videoRef.current) return
+    if (active) { videoRef.current.play().catch(()=>{}) }
+    else { videoRef.current.pause(); videoRef.current.currentTime = 0 }
+  }, [active])
+
+  const loadComments = async () => {
+    const { data } = await supabase.from('comments').select('id,content,username,created_at').eq('post_id', post.id).order('created_at')
+    setComments(data ?? []); setShowComments(true)
+  }
+
+  const submitComment = async () => {
+    if (!commentText.trim()) return
+    const { data: p } = await supabase.from('profiles').select('username').eq('id', currentUser.id).single()
+    const { data } = await supabase.from('comments').insert({ post_id: post.id, user_id: currentUser.id, username: p?.username ?? 'user', content: commentText.trim() }).select('id,content,username,created_at').single()
+    if (data) setComments(c => [...c, data]); setCommentText('')
+  }
+
+  const isVideo = post.image_url && (post.image_url.includes('.mp4') || post.image_url.includes('.webm') || post.image_url.includes('.mov'))
+  const color = colorFor(post.username)
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100vh', background: '#000', flexShrink: 0, overflow: 'hidden' }}>
+      {/* Background */}
+      {isVideo
+        ? <video ref={videoRef} src={post.image_url!} loop muted={muted} playsInline style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onClick={() => setMuted(m => !m)} />
+        : post.image_url
+          ? <img src={post.image_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(160deg,${color}22,#0a0f1a,${color}11)`, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+              <p style={{ color: '#f1f5f9', fontSize: 22, fontWeight: 700, lineHeight: 1.5, textAlign: 'center' }}>{post.text}</p>
+            </div>
+      }
+      {/* Dark gradient bottom */}
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '55%', background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 100%)', pointerEvents: 'none' }} />
+
+      {/* Right action buttons */}
+      <div style={{ position: 'absolute', right: 12, bottom: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+        <button onClick={() => onLike(post)} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IC.Heart f={post.liked} /></div>
+          <span style={{ color: '#fff', fontSize: 12, fontWeight: 600, textShadow: '0 1px 4px #000' }}>{post.likes_count}</span>
+        </button>
+        <button onClick={() => { loadComments() }} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IC.Comment /></div>
+          <span style={{ color: '#fff', fontSize: 12, fontWeight: 600, textShadow: '0 1px 4px #000' }}>{comments.length}</span>
+        </button>
+        <button onClick={() => onSave(post)} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IC.Bookmark f={post.saved} /></div>
+          <span style={{ color: '#fff', fontSize: 12, fontWeight: 600, textShadow: '0 1px 4px #000' }}>{post.saved ? '✓' : ''}</span>
+        </button>
+        {isVideo && (
+          <button onClick={() => setMuted(m => !m)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+            <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 18 }}>{muted ? '🔇' : '🔊'}</div>
+          </button>
+        )}
+      </div>
+
+      {/* Bottom info */}
+      <div style={{ position: 'absolute', bottom: 80, left: 16, right: 72, pointerEvents: 'none' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <Ava name={post.username} size={40} ring="#fff" />
+          <div>
+            <div style={{ color: '#fff', fontWeight: 700, fontSize: 15, textShadow: '0 1px 6px #000' }}>{post.username}</div>
+            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>{timeAgo(post.created_at)}</div>
+          </div>
+        </div>
+        {post.text && post.image_url && <p style={{ color: '#fff', fontSize: 14, lineHeight: 1.5, textShadow: '0 1px 4px #000', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{post.text}</p>}
+      </div>
+
+      {/* Comments panel */}
+      {showComments && (
+        <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: '#111827f0', backdropFilter: 'blur(20px)', borderRadius: '20px 20px 0 0', padding: 20, maxHeight: '60vh', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <span style={{ color: '#f1f5f9', fontWeight: 700 }}>Комментарии ({comments.length})</span>
+            <button onClick={() => setShowComments(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><IC.X /></button>
+          </div>
+          <div style={{ overflowY: 'auto', flex: 1, marginBottom: 12 }}>
+            {comments.length === 0 && <p style={{ color: '#374151', textAlign: 'center', padding: 20 }}>Нет комментариев</p>}
+            {comments.map(c => (
+              <div key={c.id} style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                <Ava name={c.username} size={32} />
+                <div style={{ background: '#1f2937', borderRadius: 10, padding: '8px 12px', flex: 1 }}>
+                  <div style={{ color: '#5b8dee', fontSize: 12, fontWeight: 700 }}>{c.username}</div>
+                  <div style={{ color: '#cbd5e1', fontSize: 13 }}>{c.content}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input value={commentText} onChange={e => setCommentText(e.target.value)} onKeyDown={e => e.key==='Enter' && submitComment()} placeholder="Комментарий..." style={{ flex: 1, background: '#1f2937', border: '1px solid #374151', borderRadius: 10, padding: '10px 14px', color: '#f1f5f9', fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+            <button onClick={submitComment} style={{ background: '#5b8dee', border: 'none', borderRadius: 10, padding: '0 14px', color: '#fff', cursor: 'pointer' }}><IC.Send /></button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── FEED PAGE ──
 function FeedPage({ user, profile }: { user: AuthUser; profile: Profile }) {
   const [posts, setPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState('')
+  const [mode, setMode] = useState<'feed'|'tiktok'>( 'feed')
+  const [activeIdx, setActiveIdx] = useState(0)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -388,6 +496,18 @@ function FeedPage({ user, profile }: { user: AuthUser; profile: Profile }) {
   }, [user.id])
 
   useEffect(() => { load() }, [load])
+
+  // Track active video on scroll
+  useEffect(() => {
+    if (mode !== 'tiktok') return
+    const el = containerRef.current; if (!el) return
+    const onScroll = () => {
+      const idx = Math.round(el.scrollTop / window.innerHeight)
+      setActiveIdx(idx)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [mode])
 
   const handleLike = async (post: Post) => {
     if (post.liked) {
@@ -419,9 +539,36 @@ function FeedPage({ user, profile }: { user: AuthUser; profile: Profile }) {
     setToast('Пост удалён')
   }
 
+  if (mode === 'tiktok') return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: '#000' }}>
+      {/* Mode toggle */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 60, display: 'flex', justifyContent: 'center', padding: '16px 0', background: 'linear-gradient(to bottom,rgba(0,0,0,0.5),transparent)' }}>
+        <div style={{ display: 'flex', gap: 24 }}>
+          <button onClick={() => setMode('feed')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.6)', fontFamily: 'inherit', fontWeight: 600, fontSize: 15 }}>Лента</button>
+          <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fff', fontFamily: 'inherit', fontWeight: 800, fontSize: 15, borderBottom: '2px solid #fff', paddingBottom: 2 }}>Видео</button>
+        </div>
+      </div>
+      {/* Scrollable container */}
+      <div ref={containerRef} style={{ height: '100vh', overflowY: 'scroll', scrollSnapType: 'y mandatory' }}>
+        {loading ? <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spinner /></div>
+          : posts.map((p, i) => (
+            <div key={p.id} style={{ scrollSnapAlign: 'start', height: '100vh' }}>
+              <TikTokCard post={p} currentUser={user} onLike={handleLike} onSave={handleSave} active={i === activeIdx} />
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  )
+
   return (
     <div>
       {toast && <Toast msg={toast} onClose={() => setToast('')} />}
+      {/* Mode switcher */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16, background: '#111827', borderRadius: 12, padding: 4 }}>
+        <button onClick={() => setMode('feed')} style={{ flex: 1, padding: '8px 0', borderRadius: 9, border: 'none', background: mode==='feed'?'#1f2937':'transparent', color: mode==='feed'?'#f1f5f9':'#4b5563', fontFamily: 'inherit', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>📰 Лента</button>
+        <button onClick={() => setMode('tiktok')} style={{ flex: 1, padding: '8px 0', borderRadius: 9, border: 'none', background: mode==='tiktok'?'#1f2937':'transparent', color: mode==='tiktok'?'#f1f5f9':'#4b5563', fontFamily: 'inherit', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>▶️ Видео</button>
+      </div>
       <StoriesBar user={user} profile={profile} />
       <CreatePost user={user} profile={profile} onPost={p => setPosts(prev => [{ ...p, liked: false, saved: false }, ...prev])} />
       {loading ? <div style={{ padding: 40, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
@@ -1069,32 +1216,84 @@ function MessagesPage({ user, profile, onViewProfile }: { user: AuthUser; profil
   )
 }
 
-// ── MUSIC PAGE ──
+// ── MUSIC PAGE (VK style) ──
+// Global audio player state (outside component so it persists)
+let _globalAudio: HTMLAudioElement | null = null
+let _setGlobalPlaying: ((id: string|null) => void) | null = null
+
 function MusicPage({ user }: { user: AuthUser }) {
-  const [tracks, setTracks] = useState<{id:string;created_at:string;title:string;artist:string;url:string;user_id:string}[]>([])
+  type Track = { id:string; created_at:string; title:string; artist:string; url:string; user_id:string }
+  const [allTracks, setAllTracks] = useState<Track[]>([])
+  const [myTracks, setMyTracks] = useState<Track[]>([])
+  const [playlists, setPlaylists] = useState<{id:string;name:string;tracks:string[]}[]>([])
   const [playing, setPlaying] = useState<string|null>(null)
-  const [progress, setProgress] = useState<Record<string,number>>({})
+  const [progress, setProgress] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState<'all'|'my'|'playlists'>( 'all')
+  const [query, setQuery] = useState('')
   const [showUpload, setShowUpload] = useState(false)
+  const [showNewPlaylist, setShowNewPlaylist] = useState(false)
   const [newTrack, setNewTrack] = useState({ title: '', artist: '' })
+  const [newPlaylistName, setNewPlaylistName] = useState('')
   const [audioFile, setAudioFile] = useState<File|null>(null)
   const [uploading, setUploading] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const [volume, setVolume] = useState(1)
   const audioRef = useRef<HTMLAudioElement|null>(null)
-  const CL = ['#e05b8d','#5b8dee','#5be0c4','#c45bee','#e0b45b']
+  const fileRef = useRef<HTMLInputElement>(null)
+  const CL = ['#e05b8d','#5b8dee','#5be0c4','#c45bee','#e0b45b','#5beea0','#ee875b']
 
   useEffect(() => {
-    supabase.from('music').select('*').order('created_at', { ascending: false }).then(({ data }) => { setTracks(data ?? []); setLoading(false) })
-  }, [])
-
-  useEffect(() => {
-    if (!playing) { audioRef.current?.pause(); return }
-    const track = tracks.find(t => t.id===playing)
-    if (track?.url && audioRef.current) {
-      audioRef.current.src = track.url
-      audioRef.current.play().catch(()=>{})
+    // Create persistent audio element
+    if (!audioRef.current) {
+      audioRef.current = new Audio()
+      _globalAudio = audioRef.current
+      _setGlobalPlaying = setPlaying
     }
-  }, [playing, tracks])
+    const a = audioRef.current
+    a.onended = () => {
+      // autoplay next
+      const list = tab === 'my' ? myTracks : allTracks
+      const idx = list.findIndex(t => t.id === playing)
+      if (idx !== -1 && idx < list.length - 1) {
+        const next = list[idx + 1]
+        setPlaying(next.id); a.src = next.url; a.play().catch(()=>{})
+      } else setPlaying(null)
+    }
+    a.ontimeupdate = () => { setCurrentTime(a.currentTime); setProgress((a.currentTime / (a.duration || 1)) * 100) }
+    a.onloadedmetadata = () => setDuration(a.duration)
+
+    Promise.all([
+      supabase.from('music').select('*').order('created_at', { ascending: false }),
+      supabase.from('music').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
+    ]).then(([{ data: all }, { data: mine }]) => {
+      setAllTracks(all ?? []); setMyTracks(mine ?? [])
+      setLoading(false)
+    })
+
+    // Load playlists from localStorage simulation (stored in supabase profiles bio or separate)
+    const saved = localStorage.getItem(`playlists_${user.id}`)
+    if (saved) setPlaylists(JSON.parse(saved))
+
+    return () => { /* keep audio alive */ }
+  }, [user.id])
+
+  const playTrack = (track: Track) => {
+    const a = audioRef.current!
+    if (playing === track.id) { if (a.paused) a.play() ; else a.pause(); return }
+    a.src = track.url; a.volume = volume
+    a.play().catch(()=>{}); setPlaying(track.id)
+  }
+
+  const stopTrack = () => { audioRef.current?.pause(); setPlaying(null) }
+
+  const seekTo = (pct: number) => {
+    if (!audioRef.current) return
+    audioRef.current.currentTime = (pct / 100) * (audioRef.current.duration || 0)
+  }
+
+  const fmt = (s: number) => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`
 
   const uploadTrack = async () => {
     if (!audioFile || !newTrack.title.trim()) return
@@ -1104,66 +1303,174 @@ function MusicPage({ user }: { user: AuthUser }) {
     if (!error) {
       const { data: u } = supabase.storage.from('music').getPublicUrl(path)
       const { data } = await supabase.from('music').insert({ title: newTrack.title, artist: newTrack.artist || 'Unknown', url: u.publicUrl, user_id: user.id }).select().single()
-      if (data) setTracks(t => [data, ...t])
+      if (data) { setAllTracks(t => [data, ...t]); setMyTracks(t => [data, ...t]) }
     }
     setUploading(false); setShowUpload(false); setNewTrack({ title:'', artist:'' }); setAudioFile(null)
   }
 
+  const createPlaylist = () => {
+    if (!newPlaylistName.trim()) return
+    const pl = [...playlists, { id: Date.now().toString(), name: newPlaylistName.trim(), tracks: [] }]
+    setPlaylists(pl); localStorage.setItem(`playlists_${user.id}`, JSON.stringify(pl))
+    setNewPlaylistName(''); setShowNewPlaylist(false)
+  }
+
+  const addToPlaylist = (plId: string, trackId: string) => {
+    const pl = playlists.map(p => p.id === plId ? { ...p, tracks: [...new Set([...p.tracks, trackId])] } : p)
+    setPlaylists(pl); localStorage.setItem(`playlists_${user.id}`, JSON.stringify(pl))
+  }
+
+  const displayTracks = (() => {
+    const base = tab === 'my' ? myTracks : allTracks
+    if (!query.trim()) return base
+    const q = query.toLowerCase()
+    return base.filter(t => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q))
+  })()
+
+  const currentTrack = allTracks.find(t => t.id === playing) ?? myTracks.find(t => t.id === playing)
+
   return (
-    <div>
-      <audio ref={audioRef} onEnded={() => setPlaying(null)} onTimeUpdate={() => {
-        if (audioRef.current && playing) {
-          const pct = (audioRef.current.currentTime / (audioRef.current.duration || 1)) * 100
-          setProgress(p => ({ ...p, [playing]: pct }))
-        }
-      }} />
-      <div style={{ background: 'linear-gradient(135deg,#0c1830,#1a2d4a)', borderRadius: 16, padding: 24, marginBottom: 20, border: '1px solid #1e3a5f', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ color: '#5b8dee', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Сейчас популярно</div>
-          <div style={{ color: '#f1f5f9', fontSize: 20, fontWeight: 800 }}>Музыка Hashtag 🎵</div>
+    <div style={{ paddingBottom: currentTrack ? 80 : 0 }}>
+      {/* Header */}
+      <div style={{ background: 'linear-gradient(135deg,#0c1830,#1a2d4a)', borderRadius: 16, padding: '20px 20px 16px', marginBottom: 16, border: '1px solid #1e3a5f' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <div>
+            <div style={{ color: '#5b8dee', fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>🎵 Музыка</div>
+            <div style={{ color: '#f1f5f9', fontSize: 19, fontWeight: 800 }}>Hashtag Music</div>
+          </div>
+          <button onClick={() => setShowUpload(!showUpload)} style={{ background: '#5b8dee22', border: '1px solid #1e3a5f', borderRadius: 10, padding: '8px 14px', color: '#5b8dee', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <IC.Plus /> Добавить
+          </button>
         </div>
-        <button onClick={() => setShowUpload(!showUpload)} style={{ background: '#5b8dee22', border: '1px solid #1e3a5f', borderRadius: 10, padding: '8px 14px', color: '#5b8dee', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <IC.Plus /> Добавить
-        </button>
+        {/* Search */}
+        <div style={{ position: 'relative' }}>
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Поиск треков и исполнителей..." style={{ width: '100%', background: 'rgba(0,0,0,0.3)', border: '1px solid #1e3a5f', borderRadius: 10, padding: '10px 14px 10px 36px', color: '#f1f5f9', fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
+          <div style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: '#374151' }}><IC.Search /></div>
+        </div>
       </div>
 
+      {/* Upload form */}
       {showUpload && (
         <div style={{ background: '#111827', borderRadius: 14, border: '1px solid #1f2937', padding: 16, marginBottom: 16 }}>
-          <input value={newTrack.title} onChange={e => setNewTrack(n => ({ ...n, title: e.target.value }))} placeholder="Название трека *" style={{ width: '100%', background: '#0a0f1a', border: '1px solid #1f2937', borderRadius: 9, padding: '10px 12px', color: '#f1f5f9', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', marginBottom: 8 }} />
+          <div style={{ color: '#f1f5f9', fontWeight: 700, marginBottom: 12 }}>Загрузить трек</div>
+          <input value={newTrack.title} onChange={e => setNewTrack(n => ({ ...n, title: e.target.value }))} placeholder="Название *" style={{ width: '100%', background: '#0a0f1a', border: '1px solid #1f2937', borderRadius: 9, padding: '10px 12px', color: '#f1f5f9', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', marginBottom: 8 }} />
           <input value={newTrack.artist} onChange={e => setNewTrack(n => ({ ...n, artist: e.target.value }))} placeholder="Исполнитель" style={{ width: '100%', background: '#0a0f1a', border: '1px solid #1f2937', borderRadius: 9, padding: '10px 12px', color: '#f1f5f9', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', marginBottom: 8 }} />
           <input ref={fileRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={e => setAudioFile(e.target.files?.[0] ?? null)} />
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => fileRef.current?.click()} style={{ flex: 1, background: '#0a0f1a', border: '1px solid #1f2937', borderRadius: 9, padding: '10px', color: audioFile?'#5b8dee':'#4b5563', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
-              {audioFile ? `✓ ${audioFile.name.slice(0,20)}...` : '🎵 Выбрать файл'}
+              {audioFile ? `✓ ${audioFile.name.slice(0,22)}` : '🎵 Выбрать файл'}
             </button>
-            <button onClick={uploadTrack} disabled={uploading} style={{ background: 'linear-gradient(135deg,#5b8dee,#3a6bc7)', border: 'none', borderRadius: 9, padding: '10px 16px', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, opacity: uploading?0.7:1 }}>
-              {uploading ? '...' : 'Загрузить'}
-            </button>
+            <button onClick={uploadTrack} disabled={uploading} style={{ background: 'linear-gradient(135deg,#5b8dee,#3a6bc7)', border: 'none', borderRadius: 9, padding: '10px 20px', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, opacity: uploading?0.7:1 }}>{uploading ? '...' : 'Загрузить'}</button>
           </div>
         </div>
       )}
 
-      {loading ? <Spinner /> : tracks.length===0
-        ? <div style={{ textAlign: 'center', color: '#374151', padding: 40 }}>Треков пока нет</div>
-        : tracks.map((t, i) => {
-          const color = CL[i%CL.length]; const isP = playing===t.id
-          return (
-            <div key={t.id} onClick={() => setPlaying(isP?null:t.id)} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 14px', borderRadius: 12, background: isP?'#111827':'transparent', border: `1px solid ${isP?'#1f2937':'transparent'}`, cursor: 'pointer', transition: 'all 0.15s', marginBottom: 4 }}>
-              <div style={{ width: 44, height: 44, borderRadius: 10, background: `linear-gradient(135deg,${color}33,${color}77)`, border: `1px solid ${color}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, flexShrink: 0 }}>
-                {isP ? <IC.Pause /> : <IC.Play />}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: '#f1f5f9', fontSize: 14, fontWeight: 600 }}>{t.title}</div>
-                <div style={{ color: '#4b5563', fontSize: 12, marginTop: 2 }}>{t.artist}</div>
-                {isP && <div style={{ marginTop: 6, background: '#1f2937', borderRadius: 4, height: 3 }}><div style={{ height: '100%', width: `${progress[t.id]??0}%`, background: `linear-gradient(90deg,${color},${color}88)`, borderRadius: 4, transition: 'width 0.1s' }} /></div>}
-              </div>
-              {t.user_id===user.id && (
-                <button onClick={async e => { e.stopPropagation(); await supabase.from('music').delete().eq('id', t.id); setTracks(prev => prev.filter(x => x.id!==t.id)) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#374151', padding: 4, borderRadius: 6, transition: 'color 0.15s' }} onMouseEnter={e=>(e.currentTarget.style.color='#e05b5b')} onMouseLeave={e=>(e.currentTarget.style.color='#374151')}><IC.Trash /></button>
-              )}
+      {/* Tabs */}
+      <div style={{ display: 'flex', background: '#111827', borderRadius: 12, padding: 4, marginBottom: 16, gap: 4 }}>
+        {(['all','my','playlists'] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: '8px 0', borderRadius: 9, border: 'none', background: tab===t?'#1f2937':'transparent', color: tab===t?'#f1f5f9':'#4b5563', fontFamily: 'inherit', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+            {t==='all'?`Все (${allTracks.length})`:t==='my'?`Мои (${myTracks.length})`:`Плейлисты`}
+          </button>
+        ))}
+      </div>
+
+      {/* Playlists tab */}
+      {tab === 'playlists' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <span style={{ color: '#64748b', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Мои плейлисты</span>
+            <button onClick={() => setShowNewPlaylist(!showNewPlaylist)} style={{ background: '#5b8dee22', border: '1px solid #1e3a5f', borderRadius: 9, padding: '6px 12px', color: '#5b8dee', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <IC.Plus /> Создать
+            </button>
+          </div>
+          {showNewPlaylist && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              <input value={newPlaylistName} onChange={e => setNewPlaylistName(e.target.value)} onKeyDown={e => e.key==='Enter' && createPlaylist()} placeholder="Название плейлиста..." style={{ flex: 1, background: '#111827', border: '1px solid #1f2937', borderRadius: 9, padding: '10px 12px', color: '#f1f5f9', fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+              <button onClick={createPlaylist} style={{ background: 'linear-gradient(135deg,#5b8dee,#3a6bc7)', border: 'none', borderRadius: 9, padding: '0 16px', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>OK</button>
             </div>
-          )
-        })
-      }
+          )}
+          {playlists.length === 0 && <div style={{ textAlign: 'center', color: '#374151', padding: 40 }}>Нет плейлистов</div>}
+          {playlists.map((pl, i) => (
+            <div key={pl.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', borderBottom: '1px solid #111827' }}>
+              <div style={{ width: 50, height: 50, borderRadius: 12, background: `linear-gradient(135deg,${CL[i%CL.length]}33,${CL[i%CL.length]}77)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>🎧</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ color: '#f1f5f9', fontWeight: 700, fontSize: 14 }}>{pl.name}</div>
+                <div style={{ color: '#64748b', fontSize: 12 }}>{pl.tracks.length} треков</div>
+              </div>
+              <button onClick={() => { const ids = new Set(pl.tracks); setAllTracks(t => t); const toPlay = allTracks.filter(t => ids.has(t.id)); if (toPlay[0]) playTrack(toPlay[0]) }} style={{ background: '#5b8dee22', border: 'none', borderRadius: 9, padding: '7px 14px', color: '#5b8dee', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12 }}>▶ Слушать</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Track list */}
+      {(tab === 'all' || tab === 'my') && (
+        loading ? <Spinner />
+        : displayTracks.length === 0
+          ? <div style={{ textAlign: 'center', color: '#374151', padding: 40 }}>{query ? 'Ничего не найдено' : 'Треков нет'}</div>
+          : displayTracks.map((t, i) => {
+            const isP = playing === t.id
+            const color = CL[i % CL.length]
+            const isPaused = isP && audioRef.current?.paused
+            return (
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 10px', borderRadius: 12, background: isP?'#111827':'transparent', border: `1px solid ${isP?'#1f2937':'transparent'}`, cursor: 'pointer', transition: 'all 0.15s', marginBottom: 2 }}>
+                <div onClick={() => playTrack(t)} style={{ width: 46, height: 46, borderRadius: 10, background: `linear-gradient(135deg,${color}33,${color}77)`, border: `1px solid ${color}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, flexShrink: 0, cursor: 'pointer' }}>
+                  {isP && !isPaused ? <IC.Pause /> : <IC.Play />}
+                </div>
+                <div onClick={() => playTrack(t)} style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: isP?'#5b8dee':'#f1f5f9', fontSize: 14, fontWeight: isP?700:500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</div>
+                  <div style={{ color: '#4b5563', fontSize: 12, marginTop: 1 }}>{t.artist}</div>
+                </div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {playlists.length > 0 && (
+                    <div style={{ position: 'relative' }}>
+                      <select onChange={e => { if (e.target.value) addToPlaylist(e.target.value, t.id) }} style={{ background: '#1f2937', border: 'none', borderRadius: 7, padding: '5px 8px', color: '#64748b', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }}>
+                        <option value="">+ Плейлист</option>
+                        {playlists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {t.user_id === user.id && (
+                    <button onClick={async e => { e.stopPropagation(); if (playing===t.id) stopTrack(); await supabase.from('music').delete().eq('id', t.id); setAllTracks(p => p.filter(x => x.id!==t.id)); setMyTracks(p => p.filter(x => x.id!==t.id)) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#374151', padding: 4, borderRadius: 6 }} onMouseEnter={e=>(e.currentTarget.style.color='#e05b5b')} onMouseLeave={e=>(e.currentTarget.style.color='#374151')}><IC.Trash /></button>
+                  )}
+                </div>
+              </div>
+            )
+          })
+      )}
+
+      {/* Mini player at bottom */}
+      {currentTrack && (
+        <div style={{ position: 'fixed', bottom: 70, left: 0, right: 0, background: '#111827f0', backdropFilter: 'blur(20px)', borderTop: '1px solid #1f2937', zIndex: 30, padding: '10px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+            <div style={{ width: 38, height: 38, borderRadius: 9, background: `linear-gradient(135deg,#5b8dee33,#5b8dee77)`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5b8dee', flexShrink: 0 }}>🎵</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: '#f1f5f9', fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentTrack.title}</div>
+              <div style={{ color: '#4b5563', fontSize: 11 }}>{currentTrack.artist}</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {/* Prev */}
+              <button onClick={() => { const list = tab==='my'?myTracks:allTracks; const idx=list.findIndex(t=>t.id===playing); if(idx>0) playTrack(list[idx-1]) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: 16 }}>⏮</button>
+              <button onClick={() => { const a=audioRef.current!; if(a.paused){a.play()}else{a.pause();setPlaying(p=>p)} }} style={{ background: '#5b8dee', border: 'none', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff' }}>
+                {audioRef.current?.paused ? <IC.Play /> : <IC.Pause />}
+              </button>
+              {/* Next */}
+              <button onClick={() => { const list=tab==='my'?myTracks:allTracks; const idx=list.findIndex(t=>t.id===playing); if(idx<list.length-1) playTrack(list[idx+1]) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: 16 }}>⏭</button>
+              <button onClick={stopTrack} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><IC.X /></button>
+            </div>
+          </div>
+          {/* Progress bar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ color: '#64748b', fontSize: 10, minWidth: 28 }}>{fmt(currentTime)}</span>
+            <div onClick={e => { const rect=e.currentTarget.getBoundingClientRect(); seekTo(((e.clientX-rect.left)/rect.width)*100) }} style={{ flex: 1, height: 4, background: '#1f2937', borderRadius: 2, cursor: 'pointer' }}>
+              <div style={{ height: '100%', width: `${progress}%`, background: 'linear-gradient(90deg,#5b8dee,#3a6bc7)', borderRadius: 2, transition: 'width 0.1s' }} />
+            </div>
+            <span style={{ color: '#64748b', fontSize: 10, minWidth: 28, textAlign: 'right' }}>{fmt(duration)}</span>
+            {/* Volume */}
+            <input type="range" min="0" max="1" step="0.05" value={volume} onChange={e => { const v=parseFloat(e.target.value); setVolume(v); if(audioRef.current) audioRef.current.volume=v }} style={{ width: 60, accentColor: '#5b8dee' }} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
