@@ -11,7 +11,7 @@ const supabase = createClient(
 // ── TYPES ──
 type Profile = { id: string; username: string; avatar_url: string | null; bio: string | null }
 type Post = { id: string; created_at: string; text: string; username: string; image_url: string | null; likes_count: number; user_id: string; views_count: number; liked?: boolean; saved?: boolean }
-type Message = { id: string; text: string; from_id: string; to_id: string; from_username: string; created_at: string }
+type Message = { id: string; text: string; from_id: string; to_id: string; from_username: string; created_at: string; msg_type?: string; media_url?: string; duration?: number }
 type Story = { id: number; user_id: string; username: string; avatar_url: string | null; image_url: string; created_at: string; expires_at: string }
 type Notification = { id: string; receiver_id: string; sender_name: string; type: string; post_id: string | null; is_read: boolean; created_at: string }
 type AuthUser = { id: string; email: string }
@@ -45,6 +45,11 @@ const IC = {
   Trash: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>,
   Check: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
   UserPlus: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>,
+  Mic: ({ rec }: { rec?: boolean }) => <svg width="20" height="20" viewBox="0 0 24 24" fill={rec?"#e05b5b":"none"} stroke={rec?"#e05b5b":"currentColor"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M19 10a7 7 0 01-14 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>,
+  Circle: ({ rec }: { rec?: boolean }) => <svg width="20" height="20" viewBox="0 0 24 24" fill={rec?"#e05b5b":"currentColor"}><circle cx="12" cy="12" r="10"/></svg>,
+  Stop: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>,
+  Attach: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>,
+  PlayCircle: () => <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>,
 }
 
 // ── HELPERS ──
@@ -600,67 +605,388 @@ function FriendsPage({ user }: { user: AuthUser }) {
   )
 }
 
+// ── USER PROFILE PAGE (view other users) ──
+function UserProfilePage({ userId, currentUser, onBack }: { userId: string; currentUser: AuthUser; onBack: () => void }) {
+  const [profile, setProfile] = useState<Profile|null>(null)
+  const [posts, setPosts] = useState<Post[]>([])
+  const [loading, setLoading] = useState(true)
+  const [following, setFollowing] = useState(false)
+  const [friendStatus, setFriendStatus] = useState<'none'|'pending'|'friends'>('none')
+  const [followerCount, setFollowerCount] = useState(0)
+
+  useEffect(() => {
+    const load = async () => {
+      const [{ data: p }, { data: ps }, { data: f }, { data: fs }] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', userId).single(),
+        supabase.from('posts').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+        supabase.from('follows').select('id').eq('follower_id', currentUser.id).eq('following_id', userId),
+        supabase.from('friendships').select('*').or(`and(requester_id.eq.${currentUser.id},receiver_id.eq.${userId}),and(requester_id.eq.${userId},receiver_id.eq.${currentUser.id})`)
+      ])
+      const { count } = await supabase.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', userId)
+      setProfile(p); setPosts(ps ?? [])
+      setFollowing((f?.length ?? 0) > 0)
+      setFollowerCount(count ?? 0)
+      if (fs?.length) setFriendStatus(fs[0].status === 'accepted' ? 'friends' : 'pending')
+      setLoading(false)
+    }
+    load()
+  }, [userId, currentUser.id])
+
+  const toggleFollow = async () => {
+    if (following) {
+      await supabase.from('follows').delete().eq('follower_id', currentUser.id).eq('following_id', userId)
+      setFollowing(false); setFollowerCount(c => c - 1)
+    } else {
+      await supabase.from('follows').insert({ follower_id: currentUser.id, following_id: userId })
+      setFollowing(true); setFollowerCount(c => c + 1)
+    }
+  }
+
+  const addFriend = async () => {
+    if (!profile) return
+    await supabase.from('friendships').insert({ requester_id: currentUser.id, receiver_id: userId, status: 'pending' })
+    setFriendStatus('pending')
+  }
+
+  if (loading) return <div style={{ padding: 40, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
+  if (!profile) return <div style={{ color: '#374151', textAlign: 'center', padding: 40 }}>Пользователь не найден</div>
+
+  const color = colorFor(profile.username)
+  const mediaPosts = posts.filter(p => p.image_url)
+
+  return (
+    <div>
+      <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#5b8dee', padding: '0 0 16px', fontFamily: 'inherit', fontSize: 14 }}>
+        <IC.Back /> Назад
+      </button>
+      <div style={{ height: 100, borderRadius: 16, marginBottom: -32, background: `linear-gradient(135deg,${color}11,${color}33,#0c2040)`, border: '1px solid #1f2937' }} />
+      <div style={{ paddingLeft: 16, marginBottom: 12 }}>
+        <Ava name={profile.username} url={profile.avatar_url} size={72} ring={color} />
+      </div>
+      <div style={{ padding: '0 4px 20px', borderBottom: '1px solid #1f2937', marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+          <div>
+            <div style={{ color: '#f1f5f9', fontSize: 18, fontWeight: 800 }}>{profile.username}</div>
+            <div style={{ color: '#374151', fontSize: 13 }}>@{profile.username}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={toggleFollow} style={{ padding: '8px 16px', background: following ? '#1f2937' : 'linear-gradient(135deg,#5b8dee,#3a6bc7)', border: following ? '1px solid #374151' : 'none', borderRadius: 10, color: following ? '#94a3b8' : '#fff', fontFamily: 'inherit', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+              {following ? 'Читаю' : 'Читать'}
+            </button>
+            {friendStatus === 'none' && <button onClick={addFriend} style={{ padding: '8px 14px', background: 'transparent', border: '1px solid #1e3a5f', borderRadius: 10, color: '#5b8dee', fontFamily: 'inherit', fontWeight: 600, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}><IC.UserPlus /></button>}
+            {friendStatus === 'pending' && <div style={{ padding: '8px 12px', background: '#1f2937', borderRadius: 10, color: '#64748b', fontSize: 12 }}>Запрос отправлен</div>}
+            {friendStatus === 'friends' && <div style={{ padding: '8px 12px', background: '#5b8dee22', borderRadius: 10, color: '#5b8dee', fontSize: 12 }}>Друзья ✓</div>}
+          </div>
+        </div>
+        {profile.bio && <p style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1.6, margin: '0 0 14px' }}>{profile.bio}</p>}
+        <div style={{ display: 'flex', gap: 24 }}>
+          {[[posts.length.toString(), 'постов'], [followerCount.toString(), 'читателей'], [mediaPosts.length.toString(), 'медиа']].map(([n, l]) => (
+            <div key={l}><div style={{ color: '#f1f5f9', fontWeight: 800, fontSize: 17 }}>{n}</div><div style={{ color: '#374151', fontSize: 11 }}>{l}</div></div>
+          ))}
+        </div>
+      </div>
+      {mediaPosts.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 2, marginBottom: 16 }}>
+          {mediaPosts.slice(0, 6).map(p => (
+            <div key={p.id} style={{ aspectRatio: '1', overflow: 'hidden', borderRadius: 4 }}>
+              <img src={p.image_url!} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
+          ))}
+        </div>
+      )}
+      {posts.map(p => <PostCard key={p.id} post={p} currentUser={currentUser} onLike={() => {}} onSave={() => {}} onDelete={() => {}} />)}
+      {posts.length === 0 && <div style={{ textAlign: 'center', color: '#374151', padding: 40 }}>Нет постов</div>}
+    </div>
+  )
+}
+
+// ── VOICE RECORDER ──
+function VoiceRecorder({ onSend, onCircle }: { onSend: (blob: Blob, duration: number, type: 'voice'|'circle') => void; onCircle: () => void }) {
+  const [recording, setRecording] = useState(false)
+  const [seconds, setSeconds] = useState(0)
+  const mediaRef = useRef<MediaRecorder|null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const timerRef = useRef<ReturnType<typeof setInterval>|null>(null)
+  const startTime = useRef(0)
+
+  const start = async (type: 'voice') => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mr = new MediaRecorder(stream)
+      chunksRef.current = []
+      mr.ondataavailable = e => chunksRef.current.push(e.data)
+      mr.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+        const dur = Math.round((Date.now() - startTime.current) / 1000)
+        onSend(blob, dur, type)
+        stream.getTracks().forEach(t => t.stop())
+      }
+      mr.start()
+      mediaRef.current = mr
+      startTime.current = Date.now()
+      setRecording(true)
+      setSeconds(0)
+      timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000)
+    } catch { alert('Нет доступа к микрофону') }
+  }
+
+  const stop = () => {
+    mediaRef.current?.stop()
+    setRecording(false)
+    if (timerRef.current) clearInterval(timerRef.current)
+  }
+
+  if (recording) return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+      <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#e05b5b', animation: 'pulse 1s infinite' }} />
+      <span style={{ color: '#e05b5b', fontWeight: 700, fontSize: 14 }}>{seconds}с</span>
+      <span style={{ color: '#64748b', fontSize: 12, flex: 1 }}>Запись...</span>
+      <button onClick={stop} style={{ background: '#e05b5b22', border: 'none', borderRadius: 10, padding: '8px 14px', color: '#e05b5b', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <IC.Stop /> Отправить
+      </button>
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      <button onClick={() => start('voice')} title="Голосовое" style={{ background: '#1f2937', border: 'none', borderRadius: 10, padding: '0 12px', color: '#5b8dee', cursor: 'pointer', height: 44, display: 'flex', alignItems: 'center' }}>
+        <IC.Mic />
+      </button>
+      <button onClick={onCircle} title="Кружок" style={{ background: '#1f2937', border: 'none', borderRadius: 10, padding: '0 12px', color: '#c45bee', cursor: 'pointer', height: 44, display: 'flex', alignItems: 'center' }}>
+        <IC.Circle />
+      </button>
+    </div>
+  )
+}
+
+// ── CIRCLE RECORDER (video message) ──
+function CircleRecorder({ onSend, onClose }: { onSend: (blob: Blob, duration: number) => void; onClose: () => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const mediaRef = useRef<MediaRecorder|null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const streamRef = useRef<MediaStream|null>(null)
+  const [recording, setRecording] = useState(false)
+  const [preview, setPreview] = useState(false)
+  const [seconds, setSeconds] = useState(0)
+  const timerRef = useRef<ReturnType<typeof setInterval>|null>(null)
+  const startTime = useRef(0)
+
+  useEffect(() => {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true }).then(stream => {
+      streamRef.current = stream
+      if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play() }
+      setPreview(true)
+    }).catch(() => { alert('Нет доступа к камере'); onClose() })
+    return () => streamRef.current?.getTracks().forEach(t => t.stop())
+  }, [onClose])
+
+  const start = () => {
+    if (!streamRef.current) return
+    const mr = new MediaRecorder(streamRef.current)
+    chunksRef.current = []
+    mr.ondataavailable = e => chunksRef.current.push(e.data)
+    mr.onstop = () => {
+      const blob = new Blob(chunksRef.current, { type: 'video/webm' })
+      const dur = Math.round((Date.now() - startTime.current) / 1000)
+      streamRef.current?.getTracks().forEach(t => t.stop())
+      onSend(blob, dur)
+    }
+    mr.start()
+    mediaRef.current = mr
+    startTime.current = Date.now()
+    setRecording(true)
+    setSeconds(0)
+    timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000)
+  }
+
+  const stop = () => {
+    mediaRef.current?.stop()
+    setRecording(false)
+    if (timerRef.current) clearInterval(timerRef.current)
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: '#000d', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: '#111827', borderRadius: 24, padding: 24, width: 300, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+        <div style={{ position: 'relative', width: 220, height: 220 }}>
+          <video ref={videoRef} muted style={{ width: 220, height: 220, borderRadius: '50%', objectFit: 'cover', background: '#0a0f1a', display: 'block' }} />
+          {recording && (
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid #e05b5b', animation: 'pulse 1s infinite' }}>
+              <div style={{ position: 'absolute', top: 8, right: 8, background: '#e05b5b', color: '#fff', borderRadius: 8, padding: '3px 8px', fontSize: 12, fontWeight: 700 }}>{seconds}с</div>
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          {!recording
+            ? <button onClick={start} style={{ background: 'linear-gradient(135deg,#c45bee,#8b2fc9)', border: 'none', borderRadius: 14, padding: '12px 28px', color: '#fff', fontFamily: 'inherit', fontWeight: 700, fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}><IC.Circle /> Записать</button>
+            : <button onClick={stop} style={{ background: 'linear-gradient(135deg,#e05b5b,#c02020)', border: 'none', borderRadius: 14, padding: '12px 28px', color: '#fff', fontFamily: 'inherit', fontWeight: 700, fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}><IC.Stop /> Отправить</button>
+          }
+          <button onClick={onClose} style={{ background: '#1f2937', border: 'none', borderRadius: 14, padding: '12px 16px', color: '#94a3b8', cursor: 'pointer' }}><IC.X /></button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── VOICE MESSAGE BUBBLE ──
+function VoiceBubble({ url, duration, isMe }: { url: string; duration: number; isMe: boolean }) {
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const [playing, setPlaying] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const accent = isMe ? '#fff' : '#5b8dee'
+  const bg = isMe ? 'rgba(255,255,255,0.15)' : '#1f2937'
+  const fmt = (s: number) => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`
+
+  const toggle = () => {
+    if (!audioRef.current) return
+    if (playing) { audioRef.current.pause(); setPlaying(false) }
+    else { audioRef.current.play(); setPlaying(true) }
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 180 }}>
+      <audio ref={audioRef} src={url} onEnded={() => { setPlaying(false); setProgress(0) }}
+        onTimeUpdate={() => { if (audioRef.current) setProgress((audioRef.current.currentTime / (audioRef.current.duration || 1)) * 100) }} />
+      <button onClick={toggle} style={{ background: bg, border: 'none', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: accent, flexShrink: 0 }}>
+        {playing ? <IC.Pause /> : <IC.Play />}
+      </button>
+      <div style={{ flex: 1 }}>
+        <div style={{ height: 3, background: isMe ? 'rgba(255,255,255,0.2)' : '#374151', borderRadius: 2 }}>
+          <div style={{ height: '100%', width: `${progress}%`, background: accent, borderRadius: 2, transition: 'width 0.1s' }} />
+        </div>
+        <div style={{ color: isMe ? 'rgba(255,255,255,0.6)' : '#64748b', fontSize: 10, marginTop: 4 }}>{fmt(duration)}</div>
+      </div>
+      <IC.Mic />
+    </div>
+  )
+}
+
+// ── CIRCLE MESSAGE BUBBLE ──
+function CircleBubble({ url }: { url: string }) {
+  const [playing, setPlaying] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const toggle = () => {
+    if (!videoRef.current) return
+    if (playing) { videoRef.current.pause(); setPlaying(false) }
+    else { videoRef.current.play(); setPlaying(true) }
+  }
+  return (
+    <div onClick={toggle} style={{ position: 'relative', width: 160, height: 160, cursor: 'pointer', flexShrink: 0 }}>
+      <video ref={videoRef} src={url} style={{ width: 160, height: 160, borderRadius: '50%', objectFit: 'cover', display: 'block' }} onEnded={() => setPlaying(false)} />
+      {!playing && (
+        <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: '#000a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <IC.PlayCircle />
+        </div>
+      )}
+      <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid #c45bee', pointerEvents: 'none' }} />
+    </div>
+  )
+}
+
 // ── MESSAGES PAGE ──
-function MessagesPage({ user, profile }: { user: AuthUser; profile: Profile }) {
-  const [chats, setChats] = useState<{userId:string;username:string;lastMsg:string;time:string}[]>([])
-  const [active, setActive] = useState<{userId:string;username:string}|null>(null)
+function MessagesPage({ user, profile, onViewProfile }: { user: AuthUser; profile: Profile; onViewProfile: (id: string) => void }) {
+  const [chats, setChats] = useState<{userId:string;username:string;avatar?:string|null;lastMsg:string;lastType:string;time:string;unread:number}[]>([])
+  const [active, setActive] = useState<{userId:string;username:string;avatar?:string|null}|null>(null)
   const [messages, setMessages] = useState<Message[]>([])
-  const [msgText, setMsgText] = useState('')
+  const [msgText, setMsgText] = useState(''  )
   const [allProfiles, setAllProfiles] = useState<Profile[]>([])
   const [showNew, setShowNew] = useState(false)
+  const [showCircle, setShowCircle] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const channelRef = useRef<ReturnType<typeof supabase.channel>|null>(null)
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
-  useEffect(() => {
-    const loadChats = async () => {
-      const { data } = await supabase.from('messages').select('*').or(`from_id.eq.${user.id},to_id.eq.${user.id}`).order('created_at', { ascending: false })
-      if (!data) return
-      const seen = new Set<string>(); const c: typeof chats = []
-      for (const m of data) {
-        const otherId = m.from_id===user.id ? m.to_id : m.from_id
-        const otherName = m.from_id===user.id ? (m.to_username ?? otherId) : m.from_username
-        if (!seen.has(otherId)) { seen.add(otherId); c.push({ userId: otherId, username: otherName, lastMsg: m.text, time: timeAgo(m.created_at) }) }
+  const loadChats = useCallback(async () => {
+    const { data } = await supabase.from('messages').select('*').or(`from_id.eq.${user.id},to_id.eq.${user.id}`).order('created_at', { ascending: false })
+    if (!data) return
+    const seen = new Set<string>(); const c: typeof chats = []
+    for (const m of data) {
+      const otherId = m.from_id===user.id ? m.to_id : m.from_id
+      const otherName = m.from_id===user.id ? (m.to_username ?? otherId) : m.from_username
+      if (!seen.has(otherId)) {
+        seen.add(otherId)
+        const lastText = m.msg_type === 'voice' ? '🎤 Голосовое' : m.msg_type === 'circle' ? '⭕ Кружок' : m.msg_type === 'image' ? '🖼 Фото' : m.text
+        c.push({ userId: otherId, username: otherName, lastMsg: lastText, lastType: m.msg_type ?? 'text', time: timeAgo(m.created_at), unread: 0 })
       }
-      setChats(c)
     }
-    loadChats()
+    setChats(c)
   }, [user.id])
 
-  // realtime subscription
+  useEffect(() => { loadChats() }, [loadChats])
+
+  // subscribe to realtime for active chat
   useEffect(() => {
+    if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null }
     if (!active) return
-    const ch = supabase.channel('messages_rt').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
-      const m = payload.new as Message
-      if ((m.from_id===user.id && m.to_id===active.userId) || (m.from_id===active.userId && m.to_id===user.id)) {
-        setMessages(prev => [...prev, m])
-      }
-    }).subscribe()
+    const ch = supabase.channel(`chat_${user.id}_${active.userId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+        const m = payload.new as Message
+        if ((m.from_id===user.id && m.to_id===active.userId) || (m.from_id===active.userId && m.to_id===user.id)) {
+          setMessages(prev => {
+            if (prev.find(x => x.id === m.id)) return prev
+            return [...prev, m]
+          })
+        }
+      }).subscribe()
+    channelRef.current = ch
     return () => { supabase.removeChannel(ch) }
   }, [active, user.id])
 
-  const openChat = async (userId: string, username: string) => {
-    setActive({ userId, username })
-    const { data } = await supabase.from('messages').select('*').or(`and(from_id.eq.${user.id},to_id.eq.${userId}),and(from_id.eq.${userId},to_id.eq.${user.id})`).order('created_at')
+  const openChat = async (userId: string, username: string, avatar?: string|null) => {
+    setActive({ userId, username, avatar })
+    const { data } = await supabase.from('messages').select('*')
+      .or(`and(from_id.eq.${user.id},to_id.eq.${userId}),and(from_id.eq.${userId},to_id.eq.${user.id})`)
+      .order('created_at')
     setMessages(data ?? [])
   }
 
-  const sendMsg = async () => {
+  const sendText = async () => {
     if (!msgText.trim() || !active) return
-    const txt = msgText.trim()
-    setMsgText('')
-    const { data } = await supabase.from('messages').insert({ from_id: user.id, to_id: active.userId, text: txt, from_username: profile.username }).select().single()
+    const txt = msgText.trim(); setMsgText('')
+    const { data } = await supabase.from('messages').insert({ from_id: user.id, to_id: active.userId, text: txt, from_username: profile.username, msg_type: 'text' }).select().single()
     if (data) setMessages(m => [...m, data])
+    loadChats()
+  }
+
+  const sendMedia = async (blob: Blob, duration: number, type: 'voice'|'circle') => {
+    if (!active) return
+    setUploading(true)
+    const ext = type === 'voice' ? 'webm' : 'webm'
+    const path = `${type}/${user.id}/${Date.now()}.${ext}`
+    const bucket = type === 'voice' ? 'voice-messages' : 'circle-messages'
+    const { error } = await supabase.storage.from(bucket).upload(path, blob)
+    if (!error) {
+      const { data: u } = supabase.storage.from(bucket).getPublicUrl(path)
+      const { data } = await supabase.from('messages').insert({ from_id: user.id, to_id: active.userId, text: '', from_username: profile.username, msg_type: type, media_url: u.publicUrl, duration }).select().single()
+      if (data) setMessages(m => [...m, data])
+    }
+    setUploading(false); setShowCircle(false); loadChats()
+  }
+
+  const sendImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]; if (!f || !active) return
+    setUploading(true)
+    const path = `chat-images/${user.id}/${Date.now()}.${f.name.split('.').pop()}`
+    const { error } = await supabase.storage.from('chat-images').upload(path, f)
+    if (!error) {
+      const { data: u } = supabase.storage.from('chat-images').getPublicUrl(path)
+      const { data } = await supabase.from('messages').insert({ from_id: user.id, to_id: active.userId, text: '', from_username: profile.username, msg_type: 'image', media_url: u.publicUrl }).select().single()
+      if (data) setMessages(m => [...m, data])
+    }
+    setUploading(false); loadChats()
   }
 
   if (showNew) return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
         <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5b8dee', padding: 4 }}><IC.Back /></button>
-        <span style={{ color: '#f1f5f9', fontWeight: 700, fontSize: 16 }}>Новое сообщение</span>
+        <span style={{ color: '#f1f5f9', fontWeight: 700, fontSize: 16 }}>Новый чат</span>
       </div>
       {allProfiles.map(p => (
-        <div key={p.id} onClick={() => { openChat(p.id, p.username); setShowNew(false) }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid #111827', cursor: 'pointer' }}>
+        <div key={p.id} onClick={() => { openChat(p.id, p.username, p.avatar_url); setShowNew(false) }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid #111827', cursor: 'pointer' }}>
           <Ava name={p.username} url={p.avatar_url} size={46} />
           <div><div style={{ color: '#f1f5f9', fontSize: 14, fontWeight: 700 }}>{p.username}</div>{p.bio && <div style={{ color: '#64748b', fontSize: 12 }}>{p.bio}</div>}</div>
         </div>
@@ -670,30 +996,45 @@ function MessagesPage({ user, profile }: { user: AuthUser; profile: Profile }) {
 
   if (active) return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 130px)' }}>
+      {showCircle && <CircleRecorder onSend={(blob, dur) => sendMedia(blob, dur, 'circle')} onClose={() => setShowCircle(false)} />}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 14, borderBottom: '1px solid #1f2937', marginBottom: 12 }}>
         <button onClick={() => setActive(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5b8dee', padding: 4 }}><IC.Back /></button>
-        <Ava name={active.username} size={38} />
-        <div><div style={{ color: '#f1f5f9', fontWeight: 700, fontSize: 14 }}>{active.username}</div><div style={{ color: '#22c55e', fontSize: 11 }}>В сети</div></div>
+        <div onClick={() => onViewProfile(active.userId)} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', flex: 1 }}>
+          <Ava name={active.username} url={active.avatar} size={40} />
+          <div>
+            <div style={{ color: '#f1f5f9', fontWeight: 700, fontSize: 15 }}>{active.username}</div>
+            <div style={{ color: '#22c55e', fontSize: 11 }}>● В сети</div>
+          </div>
+        </div>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 8 }}>
+      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 8 }}>
         {messages.length===0 && <p style={{ textAlign: 'center', color: '#374151', marginTop: 40 }}>Начни разговор 👋</p>}
         {messages.map(m => {
           const isMe = m.from_id===user.id
           return (
-            <div key={m.id} style={{ display: 'flex', justifyContent: isMe?'flex-end':'flex-start', gap: 8 }}>
-              {!isMe && <Ava name={m.from_username} size={28} />}
-              <div style={{ maxWidth: '72%', background: isMe?'linear-gradient(135deg,#5b8dee,#3a6bc7)':'#111827', border: isMe?'none':'1px solid #1f2937', borderRadius: isMe?'16px 16px 4px 16px':'16px 16px 16px 4px', padding: '10px 14px' }}>
-                <div style={{ color: '#f1f5f9', fontSize: 14, lineHeight: 1.5 }}>{m.text}</div>
-                <div style={{ color: isMe?'#ffffff77':'#374151', fontSize: 10, marginTop: 4, textAlign: 'right' }}>{timeAgo(m.created_at)}</div>
-              </div>
+            <div key={m.id} style={{ display: 'flex', justifyContent: isMe?'flex-end':'flex-start', alignItems: 'flex-end', gap: 8 }}>
+              {!isMe && <div onClick={() => onViewProfile(m.from_id)} style={{ cursor: 'pointer' }}><Ava name={m.from_username} size={28} /></div>}
+              {m.msg_type === 'circle'
+                ? <CircleBubble url={m.media_url!} />
+                : <div style={{ maxWidth: '72%', background: isMe?'linear-gradient(135deg,#5b8dee,#3a6bc7)':'#111827', border: isMe?'none':'1px solid #1f2937', borderRadius: isMe?'16px 16px 4px 16px':'16px 16px 16px 4px', padding: m.msg_type==='voice'?'10px 14px':m.msg_type==='image'?'4px':'10px 14px', overflow: 'hidden' }}>
+                  {m.msg_type === 'voice' && m.media_url && <VoiceBubble url={m.media_url} duration={m.duration ?? 0} isMe={isMe} />}
+                  {m.msg_type === 'image' && m.media_url && <img src={m.media_url} alt="" style={{ maxWidth: 220, maxHeight: 260, borderRadius: 12, display: 'block' }} />}
+                  {(!m.msg_type || m.msg_type === 'text') && <div style={{ color: '#f1f5f9', fontSize: 14, lineHeight: 1.5 }}>{m.text}</div>}
+                  <div style={{ color: isMe?'rgba(255,255,255,0.5)':'#374151', fontSize: 10, marginTop: 4, textAlign: 'right', paddingRight: m.msg_type==='image'?8:0, paddingBottom: m.msg_type==='image'?4:0 }}>{timeAgo(m.created_at)}</div>
+                </div>
+              }
             </div>
           )
         })}
+        {uploading && <div style={{ textAlign: 'center', color: '#64748b', fontSize: 12 }}>Отправка...</div>}
         <div ref={bottomRef} />
       </div>
-      <div style={{ display: 'flex', gap: 8, paddingTop: 12, borderTop: '1px solid #1f2937' }}>
-        <input value={msgText} onChange={e => setMsgText(e.target.value)} onKeyDown={e => e.key==='Enter' && sendMsg()} placeholder="Сообщение..." style={{ flex: 1, background: '#111827', border: '1px solid #1f2937', borderRadius: 12, padding: '12px 14px', color: '#f1f5f9', fontSize: 14, fontFamily: 'inherit', outline: 'none' }} />
-        <button onClick={sendMsg} style={{ background: 'linear-gradient(135deg,#5b8dee,#3a6bc7)', border: 'none', borderRadius: 12, padding: '0 16px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><IC.Send /></button>
+      <div style={{ display: 'flex', gap: 8, paddingTop: 12, borderTop: '1px solid #1f2937', alignItems: 'center' }}>
+        <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={sendImage} />
+        <button onClick={() => fileRef.current?.click()} style={{ background: '#1f2937', border: 'none', borderRadius: 10, padding: '0 10px', color: '#5b8dee', cursor: 'pointer', height: 44, display: 'flex', alignItems: 'center' }}><IC.Attach /></button>
+        <VoiceRecorder onSend={sendMedia} onCircle={() => setShowCircle(true)} />
+        <input value={msgText} onChange={e => setMsgText(e.target.value)} onKeyDown={e => e.key==='Enter' && sendText()} placeholder="Сообщение..." style={{ flex: 1, background: '#111827', border: '1px solid #1f2937', borderRadius: 12, padding: '12px 14px', color: '#f1f5f9', fontSize: 14, fontFamily: 'inherit', outline: 'none', height: 44 }} />
+        <button onClick={sendText} style={{ background: 'linear-gradient(135deg,#5b8dee,#3a6bc7)', border: 'none', borderRadius: 12, padding: '0 16px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', height: 44 }}><IC.Send /></button>
       </div>
     </div>
   )
@@ -702,19 +1043,20 @@ function MessagesPage({ user, profile }: { user: AuthUser; profile: Profile }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <span style={{ color: '#64748b', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Сообщения</span>
-        <button onClick={async () => { const { data } = await supabase.from('profiles').select('*').neq('id', user.id).limit(20); setAllProfiles(data ?? []); setShowNew(true) }} style={{ background: '#5b8dee22', border: '1px solid #1e3a5f', borderRadius: 9, padding: '6px 14px', color: '#5b8dee', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
+        <button onClick={async () => { const { data } = await supabase.from('profiles').select('*').neq('id', user.id).limit(30); setAllProfiles(data ?? []); setShowNew(true) }} style={{ background: '#5b8dee22', border: '1px solid #1e3a5f', borderRadius: 9, padding: '6px 14px', color: '#5b8dee', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
           <IC.Plus /> Написать
         </button>
       </div>
-      {chats.length===0 ? <div style={{ textAlign: 'center', color: '#374151', padding: 40 }}>Нет сообщений 💬</div>
+      {chats.length===0
+        ? <div style={{ textAlign: 'center', color: '#374151', padding: 40 }}>Нет сообщений 💬</div>
         : chats.map(c => (
-          <div key={c.userId} onClick={() => openChat(c.userId, c.username)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid #111827', cursor: 'pointer' }}>
+          <div key={c.userId} onClick={() => openChat(c.userId, c.username, c.avatar)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid #111827', cursor: 'pointer' }}>
             <div style={{ position: 'relative' }}>
-              <Ava name={c.username} size={50} />
-              <div style={{ position: 'absolute', bottom: 1, right: 1, width: 11, height: 11, borderRadius: '50%', background: '#22c55e', border: '2px solid #0a0f1a' }} />
+              <Ava name={c.username} url={c.avatar} size={52} />
+              <div style={{ position: 'absolute', bottom: 1, right: 1, width: 12, height: 12, borderRadius: '50%', background: '#22c55e', border: '2px solid #0a0f1a' }} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: '#f1f5f9', fontSize: 14, fontWeight: 700 }}>{c.username}</span>
                 <span style={{ color: '#374151', fontSize: 11 }}>{c.time}</span>
               </div>
@@ -1010,6 +1352,7 @@ export default function Page() {
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
+  const [viewingProfile, setViewingProfile] = useState<string|null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
@@ -1047,7 +1390,7 @@ export default function Page() {
 
   if (!authUser || !profile) return <AuthPage onAuth={(u, p) => { setAuthUser(u); setProfile(p) }} />
 
-  const titles: Record<string,string> = { feed:'Hashtag', search:'Поиск', friends:'Друзья', messages:'Сообщения', notifications:'Уведомления', music:'Музыка', profile:'Профиль' }
+  const titles: Record<string,string> = { feed:'Hashtag', search:'Поиск', friends:'Друзья', messages:'Сообщения', notifications:'Уведомления', music:'Музыка', profile:'Профиль', userprofile:'Профиль' }
 
   return (
     <>
@@ -1060,6 +1403,7 @@ export default function Page() {
         input::placeholder,textarea::placeholder{color:#374151}
         @keyframes spin{to{transform:rotate(360deg)}}
         @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
         .pane{animation:fadeUp 0.2s ease}
         @media(min-width:768px){.sidebar{display:flex!important}.bottomnav{display:none!important}}
       `}</style>
@@ -1122,10 +1466,11 @@ export default function Page() {
               : tab==='feed' ? <FeedPage user={authUser} profile={profile} />
               : tab==='search' ? <SearchPage user={authUser} />
               : tab==='friends' ? <FriendsPage user={authUser} />
-              : tab==='messages' ? <MessagesPage user={authUser} profile={profile} />
+              : tab==='messages' ? <MessagesPage user={authUser} profile={profile} onViewProfile={id => { setViewingProfile(id); setTab('userprofile') }} />
               : tab==='notifications' ? <NotificationsPage user={authUser} />
               : tab==='music' ? <MusicPage user={authUser} />
               : tab==='profile' ? <ProfilePage user={authUser} profile={profile} setProfile={setProfile} onLogout={logout} />
+              : tab==='userprofile' && viewingProfile ? <UserProfilePage userId={viewingProfile} currentUser={authUser} onBack={() => { setTab('messages'); setViewingProfile(null) }} />
               : null}
           </div>
 
